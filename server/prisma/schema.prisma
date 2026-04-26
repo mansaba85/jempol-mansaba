@@ -1,0 +1,174 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Employee {
+  id                Int          @id // ID dari mesin Solution/Fingerspot
+  nip               String?      // Nomor Induk Pegawai
+  name              String
+  role              String?      @default("GURU")
+  transportRate     Float        @default(0) // Honor transport per hari hadir
+  fingerId          String?
+  cardNo            String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  attendances       Attendance[]
+  honors            Honor[]
+  assignedShifts    EmployeeShift[]
+  assignedPatterns  EmployeePattern[]
+}
+
+model Category {
+  id          Int         @id @default(autoincrement())
+  name        String      @unique
+  timetables  Timetable[]
+  createdAt   DateTime    @default(now())
+}
+
+model Timetable {
+  id           Int      @id @default(autoincrement())
+  categoryId   Int?
+  category     Category? @relation(fields: [categoryId], references: [id])
+  categoryName String?  // Optional: keep for legacy/compatibility if needed
+  name         String   // "Seninkamis", "Jumat"
+  days         String?  @default("1,2,3,4,5,6") // Senin=1, Selasa=2...
+  jamMasuk     String   
+  jamPulang    String   
+  mulaiScanIn  String?
+  akhirScanIn  String?
+  mulaiScanOut String?
+  akhirScanOut String?
+  color        String?  @default("#086862")
+  createdAt    DateTime @default(now())
+  patternItems ShiftPatternItem[]
+}
+
+model ShiftPattern {
+  id          Int               @id @default(autoincrement())
+  category    String            @default("Umum") // Menyamakan kelompok
+  name        String            // "Normal", "G1", "puasa"
+  cycleDays   Int               @default(7) 
+  startDate   DateTime?         // Tanggal patokan Hari-1
+  items       ShiftPatternItem[]
+  assignments EmployeePattern[]
+  createdAt   DateTime          @default(now())
+}
+
+model ShiftPatternItem {
+  id          Int          @id @default(autoincrement())
+  patternId   Int
+  pattern     ShiftPattern @relation(fields: [patternId], references: [id])
+  timetableId Int
+  timetable   Timetable    @relation(fields: [timetableId], references: [id])
+  dayNumber   Int          // Hari ke berapa dalam siklus (1 - cycleDays)
+}
+
+model EmployeePattern {
+  id          Int          @id @default(autoincrement())
+  employeeId  Int
+  patternId   Int
+  startDate   DateTime     // Tanggal mulai siklus (Day 1)
+  employee    Employee     @relation(fields: [employeeId], references: [id])
+  pattern     ShiftPattern @relation(fields: [patternId], references: [id])
+
+  @@index([employeeId])
+}
+
+model EmployeeShift {
+  id         Int      @id @default(autoincrement())
+  employeeId Int
+  shiftId    Int
+  employee   Employee @relation(fields: [employeeId], references: [id])
+  shift      Shift    @relation(fields: [shiftId], references: [id])
+  @@unique([employeeId, shiftId])
+}
+
+model Attendance {
+  id           Int      @id @default(autoincrement())
+  employeeId   Int
+  timestamp    DateTime
+  type         String   // CHECK IN, CHECK OUT, dsb
+  deviceId     Int?     // ID Mesin asal data
+  isManual     Boolean  @default(false)
+  note         String?
+  employee     Employee @relation(fields: [employeeId], references: [id])
+
+  // Menghindari data ganda dari mesin (kombinasi ID & Waktu yang sama)
+  @@unique([employeeId, timestamp])
+  @@index([employeeId])
+  @@index([timestamp])
+}
+
+// Update: Sekarang bisa menampung banyak mesin
+model Device {
+  id           Int      @id @default(autoincrement())
+  name         String   // Nama Mesin (misal: "Pos Satpam")
+  ipAddress    String   @unique
+  port         Int      @default(4370)
+  password     String?  // Password komunikasi mesin
+  lastSync     DateTime?
+  isActive     Boolean  @default(true)
+}
+
+model MasterSchedule {
+  id          Int          @id @default(autoincrement())
+  name        String       // Misal: JADWAL NORMAL, JADWAL PUASA
+  isActive    Boolean      @default(false)
+  startDate   DateTime?    // Mulai berlaku (untuk jadwal musiman)
+  endDate     DateTime?    // Selesai berlaku
+  groups      ShiftGroup[]
+  createdAt   DateTime     @default(now())
+}
+
+model ShiftGroup {
+  id                Int             @id @default(autoincrement())
+  masterScheduleId  Int?
+  masterSchedule    MasterSchedule? @relation(fields: [masterScheduleId], references: [id])
+  name              String          // Misal: KEBERSIHAN, PENJAGA, GURU
+  shifts            Shift[]
+  createdAt         DateTime        @default(now())
+}
+
+model Shift {
+  id                Int      @id @default(autoincrement())
+  groupId           Int?     // Relasi ke Kontainer
+  group             ShiftGroup? @relation(fields: [groupId], references: [id])
+  name              String   // Misal: G_SeninKamis
+  startTime         String   // 07:00
+  endTime           String   // 14:30
+  lateTolerance     Int      @default(0)
+  earlyTolerance    Int      @default(0)
+  startScanIn       String   // 06:00
+  endScanIn         String   // 10:00
+  startScanOut      String   // 13:00
+  endScanOut        String   // 16:00
+  workDayValue      Float    @default(1) // Hitungan hari
+  workMinuteValue   Int      @default(0) // Hitungan menit
+  days              String   @default("1,2,3,4,5,6") // Hari aktif, misal: "1,2,3,4,5" (1=Monday)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  assignedEmployees EmployeeShift[]
+}
+
+model Honor {
+  id           Int      @id @default(autoincrement())
+  month        Int      // 1 - 12
+  year         Int
+  employeeId   Int
+  totalDays    Int      // Total hari hadir dalam bulan itu
+  totalAmount  Float    // totalDays * transportRate
+  status       String   @default("DRAFT") // DRAFT, PAID
+  employee     Employee @relation(fields: [employeeId], references: [id])
+  createdAt    DateTime @default(now())
+
+  @@index([employeeId])
+  @@index([month, year])
+}
