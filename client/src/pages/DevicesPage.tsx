@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import toast, { Toaster } from 'react-hot-toast';
 
+const API_URL = '/api';
+
 const DevicesPage = () => {
   const [devices, setDevices] = useState<any[]>([]);
   const [newDevice, setNewDevice] = useState({ name: '', ipAddress: '', port: '4370', password: '' });
@@ -10,50 +12,36 @@ const DevicesPage = () => {
 
   const fetchDevices = async () => {
     try {
-      const res = await axios.get('/api/devices');
+      const res = await axios.get(`${API_URL}/devices`);
       setDevices(res.data || []);
-    } catch (err) { console.error("Gagal ambil daftar mesin"); }
+    } catch (err) { console.error("Gagal mendapatkan data mesin"); }
   };
 
   const addDevice = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
-      await axios.post('/api/devices', newDevice);
+      await axios.post(`${API_URL}/devices`, newDevice);
       setNewDevice({ name: '', ipAddress: '', port: '4370', password: '' });
-      toast.success('Mesin biometrik berhasil didaftarkan');
+      toast.success('Mesin berhasil ditambahkan');
       fetchDevices();
     } catch (err: any) {
-      const msg = err.response?.data?.error || "Gagal menambah mesin.";
-      toast.error(msg);
-    }
-    setLoading(false);
-  };
-
-  const deleteDevice = async (id: number) => {
-    if (!window.confirm("Hapus mesin ini dari konfigurasi?")) return;
-    try {
-      await axios.delete(`/api/devices/${id}`);
-      toast.success('Konfigurasi mesin dihapus');
-      fetchDevices();
-    } catch (err) {
-      toast.error('Gagal menghapus mesin');
+      toast.error(err.response?.data?.error || "Gagal menambahkan mesin.");
+    } finally {
+      setLoading(false);
     }
   };
 
   const testConnection = async (id: number) => {
-    setTestResults({ ...testResults, [id]: { status: 'Testing...' } });
+    setTestResults({ ...testResults, [id]: { status: 'Syncing...' } });
     try {
-      const res = await axios.get(`/api/machine/status/${id}`);
+      const res = await axios.get(`${API_URL}/machine/status/${id}`);
       setTestResults({ ...testResults, [id]: res.data });
-      if (res.data.status === 'Connected') {
-        toast.success(`Koneksi Mesin ID.${id} Stabil`);
-      } else {
-        toast.error(`Mesin ID.${id} Gagal Terhubung`);
-      }
+      if (res.data.status === 'Connected') toast.success('Koneksi berhasil');
+      else toast.error('Koneksi terputus');
     } catch (err) {
-      setTestResults({ ...testResults, [id]: { status: 'Error' } });
-      toast.error('Kesalahan Jaringan / Timeout');
+      setTestResults({ ...testResults, [id]: { status: 'Fault' } });
+      toast.error('Timeout koneksi');
     }
   };
 
@@ -62,139 +50,165 @@ const DevicesPage = () => {
   }, []);
 
   return (
-    <div className="animate-in fade-in duration-700">
-      <header className="mb-12 pb-8 border-b border-slate-100 flex flex-col md:flex-row md:items-end justify-between gap-8">
-        <div>
-          <h2 className="text-3xl font-black text-slate-800 tracking-tight">Perangkat Biometrik</h2>
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em] mt-2">Integrasi dan monitoring mesin fingerprint institusi</p>
-        </div>
+    <div className="space-y-6">
+      <Toaster />
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+         <div>
+            <h2 className="text-2xl font-semibold text-slate-800">Terminal Mesin</h2>
+            <p className="text-sm text-slate-500 mt-1">Kelola dan pantau mesin presensi sidik jari yang terhubung.</p>
+         </div>
+         <div className="flex items-center gap-4 bg-white border border-slate-200 px-4 py-2 rounded-lg shadow-sm">
+            <div className="flex items-center gap-2 border-r border-slate-200 pr-4">
+              <i className="fa-solid fa-server text-emerald-500"></i>
+              <span className="text-sm text-slate-500">Total Mesin: <span className="text-slate-800 font-semibold">{devices.length}</span></span>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+               <i className="fa-solid fa-wifi text-blue-500"></i> Local Network
+            </div>
+         </div>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start text-slate-800">
-        {/* Form Tambah (Tetap di samping untuk efisiensi flow) */}
-        <div className="lg:col-span-4 card-mansaba shadow-2xl shadow-slate-200/50">
-          <h3 className="text-xs font-black text-slate-800 mb-8 border-b border-slate-50 pb-6 uppercase tracking-[0.2em]">Registrasi Mesin</h3>
-          <form onSubmit={addDevice} className="space-y-6">
-            <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 px-1">Lokasi Mesin</label>
-              <input 
-                className="input-mansaba w-full !py-3.5 font-black"
-                type="text" placeholder="Gedung Utama" required
-                value={newDevice.name} onChange={e => setNewDevice({...newDevice, name: e.target.value})}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-               <div>
-                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 px-1">IP Address</label>
-                 <input 
-                   className="input-mansaba w-full !py-3.5 font-mono text-sm"
-                   type="text" placeholder="192.168.1.1" required
-                   value={newDevice.ipAddress} onChange={e => setNewDevice({...newDevice, ipAddress: e.target.value})}
-                 />
-               </div>
-               <div>
-                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 px-1">Port</label>
-                 <input 
-                   className="input-mansaba w-full !py-3.5 text-center"
-                   type="number" placeholder="4370" required
-                   value={newDevice.port} onChange={e => setNewDevice({...newDevice, port: e.target.value})}
-                 />
-               </div>
-            </div>
-            <button 
-              type="submit" disabled={loading}
-              className="btn-mansaba w-full !py-4 shadow-xl shadow-primary/20 uppercase tracking-[0.2em] font-black mt-2"
-            >
-              Simpan Koneksi
-            </button>
-          </form>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* ADD DEVICE FORM */}
+        <div className="lg:col-span-1">
+          <div className="mansaba-card h-full">
+            <h3 className="text-sm font-semibold text-slate-800 border-b border-slate-100 pb-3 mb-4">
+               Tambah Mesin Baru
+            </h3>
+            <form onSubmit={addDevice} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-600 block">Nama Mesin</label>
+                <input 
+                  className="mansaba-input"
+                  type="text" placeholder="Contoh: Mesin Gedung A" required
+                  value={newDevice.name} onChange={e => setNewDevice({...newDevice, name: e.target.value})}
+                />
+              </div>
+              
+              <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-600 block">Alamat IP / IP Address</label>
+                  <input 
+                    className="mansaba-input"
+                    type="text" placeholder="192.168.1.201" required
+                    value={newDevice.ipAddress} onChange={e => setNewDevice({...newDevice, ipAddress: e.target.value})}
+                  />
+              </div>
+              <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-600 block">Port</label>
+                  <input 
+                    className="mansaba-input"
+                    type="number" placeholder="4370" required
+                    value={newDevice.port} onChange={e => setNewDevice({...newDevice, port: e.target.value})}
+                  />
+              </div>
+
+              <div className="pt-2">
+                 <button 
+                   type="submit" disabled={loading}
+                   className="mansaba-btn-primary w-full"
+                 >
+                   {loading ? (
+                     <><i className="fa-solid fa-spinner fa-spin"></i> Memproses...</>
+                   ) : (
+                     <><i className="fa-solid fa-plus"></i> Simpan Mesin</>
+                   )}
+                 </button>
+              </div>
+            </form>
+          </div>
         </div>
 
-        {/* Daftar Mesin (Tabel untuk Efisiensi) */}
-        <div className="lg:col-span-8">
-           <div className="table-wrapper">
-             <table className="table-mansaba">
-               <thead>
-                 <tr>
-                   <th className="table-header">Lokasi / Detail Mesin</th>
-                   <th className="table-header text-center">Status</th>
-                   <th className="table-header">Info Memori</th>
-                   <th className="table-header text-right">Aksi</th>
-                 </tr>
-               </thead>
-               <tbody>
-                 {devices.map(dev => (
-                   <tr key={dev.id} className="table-row group">
-                     <td className="table-cell">
-                        <div className="flex items-center gap-4">
-                           <div className="w-10 h-10 rounded-xl bg-surface-100 flex items-center justify-center text-primary border border-slate-100 group-hover:bg-primary group-hover:text-white transition-all">
-                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 16V8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2z" /></svg>
-                           </div>
-                           <div className="flex flex-col">
-                              <span className="font-black text-slate-800 text-sm">{dev.name}</span>
-                              <code className="text-[10px] text-slate-400 font-mono">{dev.ipAddress}:{dev.port}</code>
-                           </div>
-                        </div>
-                     </td>
-                     <td className="table-cell text-center">
-                        <div className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest inline-flex items-center gap-2 border transition-all ${
-                          testResults[dev.id]?.status === 'Connected' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 
-                          (testResults[dev.id]?.status === 'Error' ? 'bg-rose-50 text-rose-500 border-rose-100' : 'bg-surface-50 text-slate-400 border-slate-200')
-                        }`}>
-                          <div className={`w-1.5 h-1.5 rounded-full ${
-                            testResults[dev.id]?.status === 'Connected' ? 'bg-emerald-500 animate-pulse' : 
-                            (testResults[dev.id]?.status === 'Error' ? 'bg-rose-500' : 'bg-slate-300')
-                          }`}></div>
-                          {testResults[dev.id]?.status || 'BELUM DICEK'}
-                        </div>
-                     </td>
-                     <td className="table-cell">
-                        {testResults[dev.id]?.info ? (
-                          <div className="flex gap-4">
-                             <div className="flex flex-col">
-                                <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">LOG</span>
-                                <span className="text-xs font-black text-slate-700">{testResults[dev.id].info.logCount}</span>
-                             </div>
-                             <div className="flex flex-col">
-                                <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">USER</span>
-                                <span className="text-xs font-black text-slate-700">{testResults[dev.id].info.userCount}</span>
+        {/* DEVICES LIST */}
+        <div className="lg:col-span-2">
+           <div className="mansaba-card-no-pad">
+              <table className="mansaba-table">
+                 <thead>
+                   <tr>
+                     <th className="mansaba-th">Identitas Mesin</th>
+                     <th className="mansaba-th text-center">Status Koneksi</th>
+                     <th className="mansaba-th">Kapasitas Log</th>
+                     <th className="mansaba-th text-right">Aksi</th>
+                   </tr>
+                 </thead>
+                 <tbody>
+                   {devices.map(dev => (
+                     <tr key={dev.id} className="tr-hover">
+                       <td className="mansaba-td py-4">
+                          <div className="flex flex-col">
+                             <span className="text-sm font-semibold text-slate-800 mb-0.5">{dev.name}</span>
+                             <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                                <i className="fa-solid fa-network-wired text-slate-400"></i> {dev.ipAddress}:{dev.port}
                              </div>
                           </div>
-                        ) : (
-                          <span className="text-[10px] text-slate-300 italic">No Data</span>
-                        )}
-                     </td>
-                     <td className="table-cell text-right">
-                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
-                           <button 
-                             onClick={() => testConnection(dev.id)}
-                             className="p-3 bg-white border border-slate-200 rounded-xl text-primary hover:border-primary transition-all shadow-sm"
-                             title="Tes Koneksi"
-                           >
-                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
-                           </button>
-                           <button 
-                             onClick={() => deleteDevice(dev.id)}
-                             className="p-3 bg-rose-50 text-rose-300 hover:text-rose-500 rounded-xl border border-transparent hover:border-rose-100 transition-all shadow-sm"
-                             title="Hapus"
-                           >
-                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /></svg>
-                           </button>
-                        </div>
-                     </td>
-                   </tr>
-                 ))}
-                 {devices.length === 0 && (
-                   <tr>
-                     <td colSpan={4} className="py-20 text-center text-slate-300 font-bold uppercase tracking-widest text-[10px] italic">Belum ada mesin terdaftar</td>
-                   </tr>
-                 )}
-               </tbody>
-             </table>
+                       </td>
+                       <td className="mansaba-td text-center">
+                          {testResults[dev.id]?.status === 'Connected' ? (
+                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-emerald-100 text-emerald-700 text-xs font-medium border border-emerald-200">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Terhubung
+                             </span>
+                          ) : testResults[dev.id]?.status === 'Fault' ? (
+                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-rose-100 text-rose-700 text-xs font-medium border border-rose-200">
+                                <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Gagal
+                             </span>
+                          ) : testResults[dev.id]?.status === 'Syncing...' ? (
+                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-blue-100 text-blue-700 text-xs font-medium border border-blue-200">
+                                <i className="fa-solid fa-spinner fa-spin"></i> Ping...
+                             </span>
+                          ) : (
+                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-100 text-slate-600 text-xs font-medium border border-slate-200">
+                                <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Standby
+                             </span>
+                          )}
+                       </td>
+                       <td className="mansaba-td">
+                          {testResults[dev.id]?.info ? (
+                             <div className="flex flex-col gap-1 text-xs">
+                                <div className="flex justify-between items-center bg-slate-50 px-2 py-1 rounded border border-slate-100">
+                                   <span className="text-slate-500">User:</span>
+                                   <span className="font-semibold text-slate-800">{testResults[dev.id].info.userCount}</span>
+                                </div>
+                                <div className="flex justify-between items-center bg-slate-50 px-2 py-1 rounded border border-slate-100">
+                                   <span className="text-slate-500">Log:</span>
+                                   <span className="font-semibold text-slate-800">{testResults[dev.id].info.logCount}</span>
+                                </div>
+                             </div>
+                          ) : (
+                             <span className="text-xs text-slate-400 italic">Klik Ping untuk melihat kapasitas</span>
+                          )}
+                       </td>
+                       <td className="mansaba-td text-right">
+                          <div className="flex items-center justify-end gap-2">
+                             <button 
+                               onClick={() => testConnection(dev.id)}
+                               className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors flex items-center justify-center"
+                               title="Test Koneksi (Ping)"
+                             >
+                               <i className="fa-solid fa-bolt"></i>
+                             </button>
+                             <button 
+                               onClick={async () => { if (window.confirm("Yakin ingin menghapus mesin ini?")) { await axios.delete(`${API_URL}/devices/${dev.id}`); fetchDevices(); } }}
+                               className="w-8 h-8 rounded-lg bg-slate-50 text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors flex items-center justify-center border border-slate-200"
+                               title="Hapus Mesin"
+                             >
+                               <i className="fa-solid fa-trash-can"></i>
+                             </button>
+                          </div>
+                       </td>
+                     </tr>
+                   ))}
+                   {devices.length === 0 && (
+                     <tr>
+                        <td colSpan={4} className="py-12 text-center">
+                           <i className="fa-solid fa-fax text-3xl text-slate-300 mb-3 block"></i>
+                           <p className="text-sm font-medium text-slate-500">Belum ada mesin yang ditambahkan.</p>
+                        </td>
+                     </tr>
+                   )}
+                 </tbody>
+              </table>
            </div>
         </div>
       </div>
-      <Toaster position="top-right" />
     </div>
   );
 };

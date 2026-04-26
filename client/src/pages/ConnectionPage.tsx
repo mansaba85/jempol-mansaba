@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { toast, Toaster } from 'react-hot-toast';
 
 const ConnectionPage = () => {
   const [data, setData] = useState<any>(null);
@@ -7,6 +8,7 @@ const ConnectionPage = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState({ step: "", percent: 0, details: "" });
+  const [syncComplete, setSyncComplete] = useState(false);
 
   const fetchStats = async () => {
     try {
@@ -16,7 +18,7 @@ const ConnectionPage = () => {
         setDbCount(res.data.dbCount);
         return true;
       }
-    } catch (err) { console.error("Gagal ambil stats"); }
+    } catch (err) { console.error("Gagal mendapatkan status mesin"); }
     return false;
   };
 
@@ -24,115 +26,156 @@ const ConnectionPage = () => {
     setLoading(true);
     if (!isConnected) {
       const success = await fetchStats();
-      if (success) setIsConnected(true);
-      else alert("Gagal terhubung ke mesin!");
+      if (success) {
+         setIsConnected(true);
+         toast.success('Mesin berhasil terhubung');
+      } else {
+         toast.error("Gagal terhubung ke mesin!");
+      }
     } else {
       setIsConnected(false);
       setData(null);
+      toast.success('Koneksi mesin diputus');
     }
     setLoading(false);
   };
 
   const startSyncStream = () => {
     setLoading(true);
+    setSyncComplete(false);
     setProgress({ step: "Memulai Sinkronisasi Semua Perangkat...", percent: 0, details: "" });
     const eventSource = new EventSource('/api/machine/sync-all');
+    
     eventSource.onmessage = async (event) => {
       const update = JSON.parse(event.data);
       setProgress(update);
+      
       if (update.percent === 100) {
         eventSource.close();
         setLoading(false);
+        setSyncComplete(true);
+        toast.success("Sinkronisasi data selesai");
         await fetchStats(); 
+        setTimeout(() => {
+           setProgress({ step: "", percent: 0, details: "" });
+           setSyncComplete(false);
+        }, 5000); // Sembunyikan progress bar setelah 5 detik
       }
+      
       if (update.step === 'Error') {
         eventSource.close();
         setLoading(false);
+        toast.error("Terjadi kesalahan saat sinkronisasi");
       }
+    };
+    
+    eventSource.onerror = () => {
+       eventSource.close();
+       setLoading(false);
     };
   };
 
   useEffect(() => {
-    fetchStats();
+    fetchStats().then(success => {
+       if (success) setIsConnected(true);
+    });
   }, []);
 
   return (
-    <div className="animate-in fade-in duration-700">
-      <header className="mb-12 border-b border-slate-100 pb-8">
-        <div className="flex items-center gap-4 mb-2">
-           <div className="w-2 h-10 bg-primary/20 rounded-full"></div>
-           <h2 className="text-3xl font-black text-slate-800 tracking-tight">Pusat Sinkronisasi</h2>
+    <div className="space-y-6">
+      <Toaster />
+      
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+           <h2 className="text-2xl font-semibold text-slate-800">Pusat Sinkronisasi</h2>
+           <p className="text-sm text-slate-500 mt-1">Tarik dan sinkronisasikan data presensi dari seluruh mesin ke database pusat.</p>
         </div>
-        <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em] mt-2">Tarik data presensi dari seluruh mesin ke database pusat</p>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-stretch">
-        <div className="card-mansaba !p-10 flex flex-col justify-between border-slate-100/80 shadow-xl shadow-slate-100/50">
-          <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-10 pb-4 border-b border-slate-50 flex items-center justify-between">
-            Status Jaringan <span>🌐</span>
-          </h3>
-          <div className="flex flex-col items-center py-10">
-            <div className={`w-28 h-28 rounded-[2.5rem] flex items-center justify-center mb-8 border-4 transition-all duration-500 shadow-2xl ${isConnected ? 'bg-primary/5 border-primary text-primary shadow-primary/20 scale-110' : 'bg-surface-50 border-slate-100 text-slate-200'}`}>
-               <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.59 16.11a6 6 0 0 1 6.82 0M12 20h.01" /></svg>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        {/* NETWORK STATUS CARD */}
+        <div className="mansaba-card flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-8 pb-4 border-b border-slate-100">
+             <h3 className="text-sm font-semibold text-slate-700">Status Jaringan Perangkat</h3>
+             <i className="fa-solid fa-globe text-slate-400"></i>
+          </div>
+          
+          <div className="flex flex-col items-center py-6">
+            <div className={`w-24 h-24 rounded-full flex items-center justify-center mb-6 border-4 transition-colors ${isConnected ? 'bg-blue-50 border-blue-100 text-blue-600' : 'bg-slate-50 border-slate-100 text-slate-300'}`}>
+               <i className="fa-solid fa-wifi text-3xl"></i>
             </div>
-            <div className="text-center mb-12">
-              <span className={`text-[10px] font-black uppercase tracking-[0.3em] ${isConnected ? 'text-primary' : 'text-slate-300'}`}>Sistem Saat Ini</span>
-              <h2 className={`text-3xl font-black tracking-tight mt-2 ${isConnected ? 'text-slate-800' : 'text-slate-200'}`}>{isConnected ? 'TERHUBUNG' : 'TERPUTUS'}</h2>
+            
+            <div className="text-center mb-8">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1">Status Koneksi</span>
+              <h2 className={`text-xl font-bold ${isConnected ? 'text-blue-600' : 'text-slate-400'}`}>{isConnected ? 'TERHUBUNG' : 'TERPUTUS'}</h2>
             </div>
+            
             <button 
               onClick={toggleConnection} 
               disabled={loading} 
-              className={`w-full py-5 rounded-2xl font-black text-[11px] tracking-[0.2em] uppercase transition-all shadow-xl active:scale-95 ${isConnected ? 'bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white border border-rose-100 shadow-rose-500/10' : 'btn-mansaba shadow-primary/20'}`}
+              className={`w-full py-3 rounded-lg font-medium text-sm transition-colors border ${isConnected ? 'bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100' : 'mansaba-btn-primary hover:bg-blue-700'}`}
             >
-              {loading ? 'MEMPROSES...' : (isConnected ? 'PUTUSKAN KONEKSI' : 'HUBUNGKAN SEKARANG')}
+              {loading ? (
+                 <><i className="fa-solid fa-spinner fa-spin mr-2"></i> Memproses...</>
+              ) : isConnected ? (
+                 <><i className="fa-solid fa-link-slash mr-2"></i> Putuskan Koneksi</>
+              ) : (
+                 <><i className="fa-solid fa-link mr-2"></i> Hubungkan Sekarang</>
+              )}
             </button>
           </div>
         </div>
 
-        <div className={`card-mansaba !p-10 flex flex-col justify-between transition-all duration-700 border-slate-100/80 shadow-xl shadow-slate-100/50 ${isConnected ? 'opacity-100 translate-y-0' : 'opacity-20 translate-y-4 grayscale blur-[2px] pointer-events-none'}`}>
-          <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-12 pb-4 border-b border-slate-50 flex items-center justify-between">
-            Ringkasan Statistik <span>📊</span>
-          </h3>
-          <div className="space-y-6 mb-12">
-            <div className="flex items-center justify-between p-6 bg-surface-50 rounded-[2rem] border border-slate-100 group hover:border-primary/20 transition-all">
+        {/* STATS & SYNC CARD */}
+        <div className={`mansaba-card flex flex-col justify-between transition-all duration-500 ${isConnected ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
+          <div className="flex items-center justify-between mb-8 pb-4 border-b border-slate-100">
+             <h3 className="text-sm font-semibold text-slate-700">Ringkasan Data Sinkronisasi</h3>
+             <i className="fa-solid fa-chart-simple text-slate-400"></i>
+          </div>
+          
+          <div className="space-y-4 mb-8">
+            <div className="flex items-center justify-between p-5 bg-slate-50 rounded-xl border border-slate-200">
                <div>
-                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 leading-none">Antrian di Mesin</p>
-                 <p className="font-black text-slate-800 text-3xl tracking-tighter">{data?.info?.logCount ?? '-'}</p>
+                 <p className="text-xs font-medium text-slate-500 mb-1">Antrian di Mesin</p>
+                 <p className="font-semibold text-slate-800 text-2xl">{data?.info?.logCount?.toLocaleString() ?? '-'}</p>
                </div>
-               <div className="w-12 h-12 rounded-2xl border border-slate-200 flex items-center justify-center text-slate-300 group-hover:text-primary transition-colors">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
+               <div className="w-12 h-12 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-400">
+                  <i className="fa-solid fa-server text-xl"></i>
                </div>
             </div>
-            <div className="flex items-center justify-between p-6 bg-surface-50 rounded-[2rem] border border-slate-100 group hover:border-primary/20 transition-all">
+            <div className="flex items-center justify-between p-5 bg-blue-50 rounded-xl border border-blue-100">
                <div>
-                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 leading-none">Database MANSABA</p>
-                 <p className="font-black text-primary text-3xl tracking-tighter">{dbCount?.toLocaleString() ?? '0'}</p>
+                 <p className="text-xs font-medium text-blue-500 mb-1">Database MANSABA</p>
+                 <p className="font-semibold text-blue-700 text-2xl">{dbCount?.toLocaleString() ?? '0'}</p>
                </div>
-               <div className="w-12 h-12 rounded-2xl border border-slate-200 flex items-center justify-center text-slate-300 group-hover:text-primary transition-colors">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H3v5m0 0v5h18v-5M3 12h18" /></svg>
+               <div className="w-12 h-12 rounded-lg bg-white border border-blue-200 flex items-center justify-center text-blue-500">
+                  <i className="fa-solid fa-database text-xl"></i>
                </div>
             </div>
           </div>
-          <button onClick={startSyncStream} disabled={loading} className="btn-mansaba w-full !py-5 shadow-2xl shadow-primary/20 uppercase tracking-[0.3em] font-black text-[11px]">
-             Sinkronisasi Semua Perangkat
+          
+          <button onClick={startSyncStream} disabled={loading || !isConnected} className="mansaba-btn-primary w-full py-3">
+             <i className="fa-solid fa-rotate mr-2"></i> Mulai Sinkronisasi Total
           </button>
         </div>
       </div>
 
+      {/* PROGRESS BAR SECTION */}
       {progress.percent > 0 && (
-        <div className="mt-12 card-mansaba !p-12 shadow-2xl border-primary/10 animate-in slide-in-from-bottom-12 duration-700 bg-white">
-          <div className="flex justify-between items-end mb-8">
-            <div className="space-y-2">
-              <div className="flex items-center gap-3">
-                <div className="w-2 h-2 bg-primary rounded-full animate-ping"></div>
-                <span className="font-black text-slate-800 uppercase tracking-[0.2em] text-[10px]">{progress.step}</span>
+        <div className="mansaba-card mt-6 border-blue-200 bg-white">
+          <div className="flex justify-between items-end mb-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <i className={`fa-solid ${syncComplete ? 'fa-check text-emerald-500' : 'fa-circle-notch fa-spin text-blue-500'}`}></i>
+                <span className="font-semibold text-slate-800 text-sm">{progress.step}</span>
               </div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-tighter">{progress.details || 'Menunggu pemrosesan data...'}</p>
+              <p className="text-xs text-slate-500">{syncComplete ? 'Data telah berhasil dimasukkan ke dalam sistem.' : progress.details || 'Tunggu sebentar...'}</p>
             </div>
-            <span className="font-black text-primary text-5xl tracking-tighter leading-none">{progress.percent}<span className="text-xl ml-1">%</span></span>
+            <span className={`font-bold text-3xl ${syncComplete ? 'text-emerald-600' : 'text-blue-600'}`}>{progress.percent}%</span>
           </div>
-          <div className="w-full h-4 bg-surface-100 rounded-full overflow-hidden p-1 border border-slate-100 shadow-inner">
-            <div className="h-full bg-primary rounded-full transition-all duration-1000 shadow-[0_0_20px_rgba(8,104,98,0.4)]" style={{ width: `${progress.percent}%` }}></div>
+          <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+            <div className={`h-full rounded-full transition-all duration-300 ${syncComplete ? 'bg-emerald-500' : 'bg-blue-600'}`} style={{ width: `${progress.percent}%` }}></div>
           </div>
         </div>
       )}

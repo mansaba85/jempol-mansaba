@@ -1,18 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { format } from 'date-fns';
-import { 
-  Plus, 
-  Trash2, 
-  Save, 
-  Clock, 
-  ChevronRight, 
-  Layers, 
-  X as CloseIcon, 
-  Calendar, 
-  Edit3 
-} from 'lucide-react';
-import toast, { Toaster } from 'react-hot-toast';
+import { toast, Toaster } from 'react-hot-toast';
 
 const API_URL = '/api';
 
@@ -22,9 +11,8 @@ const RosterPage = () => {
   const [loading, setLoading] = useState(true);
   
   const [selectedPattern, setSelectedPattern] = useState<any>(null);
-  const [patternItems, setPatternItems] = useState<any>({}); // dayNumber -> timetableId
+  const [patternItems, setPatternItems] = useState<any>({});
   
-  // Create Form States
   const [showAdd, setShowAdd] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [formData, setFormData] = useState({
@@ -79,16 +67,16 @@ const RosterPage = () => {
       await axios.put(`${API_URL}/patterns/${formData.id}`, {
         name: formData.name,
         startDate: formData.startDate,
-        cycleDays: cycleDays // Optional: depends if you want to allow changing cycle length
+        cycleDays: cycleDays
       });
-      toast.success('Shift diperbarui');
+      toast.success('Pola shift diperbarui');
       setShowEdit(false);
       fetchData();
       if (selectedPattern?.id === formData.id) {
         setSelectedPattern({...selectedPattern, name: formData.name, startDate: formData.startDate, cycleDays});
       }
     } catch (err) {
-      toast.error('Gagal update shift');
+      toast.error('Gagal update pola shift');
     }
   };
 
@@ -103,309 +91,218 @@ const RosterPage = () => {
         cycleDays: cycleDays,
         startDate: formData.startDate
       });
-      toast.success('Shift baru berhasil dibuat');
+      toast.success('Pola shift baru dibuat');
       setShowAdd(false);
       setFormData({ ...formData, name: '', startDate: format(new Date(), 'yyyy-MM-dd') });
       fetchData();
-      // Auto select
       setSelectedPattern(res.data);
       setPatternItems({});
     } catch (err) {
-      toast.error('Gagal membuat shift');
+      toast.error('Gagal membuat pola shift');
     }
   };
 
   const handleSaveItems = async () => {
     if (!selectedPattern) return;
     try {
-      // Also save the pattern's startDate if it was updated in the UI
-      await Promise.all([
-        axios.post(`${API_URL}/patterns/${selectedPattern.id}/items`, {
-          items: Object.entries(patternItems).map(([day, ttId]) => ({
-            dayNumber: parseInt(day),
-            timetableId: ttId ? parseInt(ttId as string) : null
-          }))
-        }),
-        // Update general pattern info (startDate)
-        axios.put(`${API_URL}/patterns/${selectedPattern.id}`, {
-          name: selectedPattern.name,
-          startDate: selectedPattern.startDate
-        })
-      ]);
-      
-      toast.success('Pengaturan shift berhasil disimpan');
+      await axios.post(`${API_URL}/patterns/${selectedPattern.id}/items`, {
+        items: Object.entries(patternItems).map(([day, ttId]) => ({
+          dayNumber: parseInt(day),
+          timetableId: ttId ? parseInt(ttId as string) : null
+        }))
+      });
+      toast.success('Urutan shift harian tersimpan');
       fetchData();
     } catch (err) {
-      toast.error('Gagal menyimpan jadwal');
+      toast.error('Gagal menyimpan jadwal harian');
     }
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm("Hapus shift ini? Seluruh urutan jam kerja di dalamnya akan ikut terhapus.")) return;
+    if (!window.confirm("Hapus pola shift ini secara permanen?")) return;
     try {
       await axios.delete(`${API_URL}/patterns/${id}`);
-      toast.success('Shift dihapus');
+      toast.success('Pola shift dihapus');
       if (selectedPattern?.id === id) setSelectedPattern(null);
       fetchData();
     } catch (err) {
-      toast.error('Gagal menghapus');
+      toast.error('Gagal menghapus pola');
     }
   };
 
   const getDayLabel = (dayNum: number) => {
     const days = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
-    // Logic: calculate day of week relative to startDate
-    if (!selectedPattern?.startDate) return days[(dayNum - 1) % 7];
-    
-    const start = new Date(selectedPattern.startDate);
-    // adjust to compensate for dayNum starting at 1
-    const current = new Date(start);
-    current.setDate(start.getDate() + (dayNum - 1));
-    const dayIndex = current.getDay(); // 0 is Sunday
-    const weekMap = [6, 0, 1, 2, 3, 4, 5]; // Map 0->Sunday (index 6 in our array)
-    return days[weekMap[dayIndex]];
+    return days[(dayNum - 1) % 7];
   };
 
   return (
-    <div className="animate-in fade-in duration-700 h-full flex flex-col">
-      <Toaster position="top-right" />
+    <div className="space-y-6">
+      <Toaster />
       
-      <header className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-slate-100">
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold text-slate-800 tracking-tight">Pengaturan Shift</h2>
-          <p className="text-xs font-medium text-slate-400 uppercase tracking-widest mt-2">Definisi rotasi mingguan dan siklus kerja</p>
+           <h2 className="text-2xl font-semibold text-slate-800">Pola Rotasi Kerja</h2>
+           <p className="text-sm text-slate-500 mt-1">Konfigurasi urutan shift harian dan siklus kerja pegawai.</p>
         </div>
         <button 
-          onClick={() => setShowAdd(true)}
-          className="btn-mansaba px-8 py-3.5 !rounded-2xl shadow-xl shadow-primary/20"
+           onClick={() => setShowAdd(true)}
+           className="mansaba-btn-primary"
         >
-          <Plus size={18} strokeWidth={2.5} /> Tambah Shift
+           <i className="fa-solid fa-plus"></i> Tambah Pola Rotasi
         </button>
       </header>
 
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-8 min-h-0 overflow-hidden">
-        {/* LEFT: DAFTAR SHIFT */}
-        <div className="lg:col-span-5 flex flex-col min-h-0">
-          <div className="flex items-center gap-2 mb-4 px-2">
-            <Layers size={16} className="text-primary" />
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Daftar Shift</span>
-          </div>
-          
-          <div className="table-wrapper flex-1 overflow-y-auto border border-slate-200/50 shadow-premium no-scrollbar">
-            <table className="table-mansaba">
-              <thead>
-                <tr>
-                  <th className="table-header">Nama Shift</th>
-                  <th className="table-header text-center whitespace-nowrap">Tgl. Mulai</th>
-                  <th className="table-header text-center">Periode</th>
-                  <th className="table-header text-right">Aksi</th>
-                </tr>
-              </thead>
-              <tbody>
-                {patterns.map(p => (
-                  <tr 
-                    key={p.id} 
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+        {/* LEFT: LIST OF PATTERNS */}
+        <div className="xl:col-span-4 space-y-4">
+           <div className="flex items-center justify-between bg-white px-4 py-3 border border-slate-200 rounded-lg shadow-sm">
+              <span className="text-sm font-semibold text-slate-700">Daftar Pola Rotasi</span>
+              <span className="text-xs font-semibold px-2 py-1 bg-blue-50 text-blue-600 rounded">{patterns.length} Pola</span>
+           </div>
+           
+           <div className="space-y-2 max-h-[70vh] overflow-y-auto">
+              {patterns.map(p => (
+                 <div 
+                    key={p.id}
                     onClick={() => {
-                      setSelectedPattern(p);
-                      const itemsMap: any = {};
-                      p.items.forEach((it: any) => itemsMap[it.dayNumber] = it.timetableId);
-                      setPatternItems(itemsMap);
+                        setSelectedPattern(p);
+                        const itemsMap: any = {};
+                        p.items.forEach((it: any) => itemsMap[it.dayNumber] = it.timetableId);
+                        setPatternItems(itemsMap);
                     }}
-                    className={`table-row cursor-pointer group ${selectedPattern?.id === p.id ? 'bg-primary/5' : ''}`}
-                  >
-                    <td className="table-cell">
-                      <div className="flex items-center gap-3">
-                        {selectedPattern?.id === p.id && <div className="w-1.5 h-6 bg-primary rounded-full -ml-6 absolute transition-all" />}
-                        <div>
-                          <p className="font-bold text-slate-700 text-sm leading-none mb-1">{p.name}</p>
-                          <p className="text-[9px] font-semibold text-slate-400 uppercase">{p.category || 'UMUM'}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="table-cell text-center text-[11px] font-bold text-slate-500 italic">
-                      {p.startDate ? format(new Date(p.startDate), 'dd/MM/yyyy') : '-'}
-                    </td>
-                    <td className="table-cell text-center">
-                      <span className="px-2 py-0.5 bg-surface-100 rounded-md text-[10px] font-bold text-slate-500 border border-slate-200/50">
-                        {p.cycleDays >= 7 ? Math.floor(p.cycleDays / 7) : p.cycleDays} {p.cycleDays >= 7 ? 'Mgg' : 'Hr'}
-                      </span>
-                    </td>
-                    <td className="table-cell text-right">
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); handleEditPattern(p); }}
-                        className="flex items-center gap-2 px-4 py-2 bg-primary text-white text-[10px] font-black uppercase rounded-xl shadow-lg shadow-primary/20 hover:bg-primary-light transition-all active:scale-95"
-                      >
-                        <Edit3 size={12} /> EDIT
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    className={`bg-white border rounded-lg p-4 cursor-pointer transition-colors shadow-sm ${selectedPattern?.id === p.id ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-200 hover:border-blue-300'}`}
+                 >
+                    <div className="flex items-center justify-between">
+                       <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg ${selectedPattern?.id === p.id ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}>
+                             <i className="fa-solid fa-rotate"></i>
+                          </div>
+                          <div>
+                             <h4 className="text-sm font-semibold text-slate-800">{p.name}</h4>
+                             <p className="text-xs text-slate-500 mt-0.5">Siklus: {p.cycleDays} Hari</p>
+                          </div>
+                       </div>
+                       <button 
+                          onClick={(e) => { e.stopPropagation(); handleEditPattern(p); }}
+                          className="w-8 h-8 rounded text-slate-400 hover:bg-slate-50 hover:text-blue-600 transition-colors flex items-center justify-center"
+                       >
+                          <i className="fa-solid fa-pen-to-square"></i>
+                       </button>
+                    </div>
+                 </div>
+              ))}
+              {patterns.length === 0 && !loading && (
+                 <div className="text-center py-10 bg-white border border-slate-200 rounded-lg text-slate-500 text-sm">
+                    Belum ada pola rotasi yang terdaftar.
+                 </div>
+              )}
+           </div>
         </div>
 
-        {/* RIGHT: PERIODE JAM KERJA */}
-        <div className="lg:col-span-7 flex flex-col min-h-0">
-          <div className="flex items-center justify-between mb-4 px-2">
-            <div className="flex items-center gap-2">
-              <Clock size={16} className="text-primary" />
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Periode Jam Kerja</span>
-            </div>
-            {selectedPattern && (
-              <button 
-                onClick={handleSaveItems}
-                className="flex items-center gap-2 px-4 py-1.5 bg-primary text-white text-[10px] font-bold uppercase rounded-xl shadow-lg shadow-primary/20 hover:bg-primary-light transition-all"
-              >
-                <Save size={12} /> Simpan Urutan
-              </button>
-            )}
-          </div>
+        {/* RIGHT: URUTAN JAM KERJA */}
+        <div className="xl:col-span-8">
+           {selectedPattern ? (
+              <div className="mansaba-card">
+                 <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-6">
+                    <div>
+                       <h3 className="text-lg font-semibold text-slate-800">{selectedPattern.name}</h3>
+                       <p className="text-sm text-slate-500 mt-1">Siklus {selectedPattern.cycleDays} hari, mulai dari {selectedPattern.startDate ? format(new Date(selectedPattern.startDate), 'dd MMMM yyyy') : '-'}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                       <button onClick={handleSaveItems} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm">
+                          Simpan Susunan
+                       </button>
+                       <button onClick={() => handleDelete(selectedPattern.id)} className="w-9 h-9 rounded-lg border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50 transition-colors flex items-center justify-center" title="Hapus Pola">
+                          <i className="fa-solid fa-trash-can"></i>
+                       </button>
+                    </div>
+                 </div>
 
-          <div className="flex-1 table-wrapper overflow-y-auto border border-slate-200/50 shadow-premium p-8 bg-white no-scrollbar">
-            {selectedPattern ? (
-              <div className="space-y-6">
-                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-6 border-b border-slate-50">
-                  <h3 className="text-2xl font-bold text-slate-800 tracking-tight">{selectedPattern.name}</h3>
-                  <button 
-                    onClick={() => handleDelete(selectedPattern.id)}
-                    className="p-2.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                </div>
-
-                {/* PROMINENT START DATE EDITOR */}
-                <div className="bg-primary/5 p-6 rounded-[2rem] border border-primary/10 flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm">
-                   <div className="flex items-center gap-5">
-                      <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center shadow-sm text-primary">
-                         <Calendar size={28} />
-                      </div>
-                      <div>
-                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Mulai Kalibrasi (Hari-1)</p>
-                         <input 
-                            type="date" 
-                            className="bg-transparent text-xl font-black text-primary focus:outline-none cursor-pointer"
-                            value={selectedPattern.startDate ? format(new Date(selectedPattern.startDate), 'yyyy-MM-dd') : ''}
-                            onChange={e => setSelectedPattern({...selectedPattern, startDate: e.target.value})}
-                         />
-                      </div>
-                   </div>
-                   <div className="h-10 w-px bg-slate-200 hidden md:block"></div>
-                   <div className="text-center md:text-right">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Durasi Siklus</p>
-                      <p className="text-xl font-black text-slate-800 uppercase tracking-tight">{selectedPattern.cycleDays} Hari</p>
-                   </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-2.5">
-                  {Array.from({ length: selectedPattern.cycleDays }).map((_, i) => {
-                    const dayNum = i + 1;
-                    const isSunday = getDayLabel(dayNum) === 'Minggu';
-                    return (
-                      <div key={dayNum} className={`flex items-center gap-4 p-3.5 rounded-2xl border transition-all ${isSunday ? 'bg-rose-50/40 border-rose-100/50' : 'bg-surface-50/50 border-slate-100 hover:border-primary/20'}`}>
-                        <div className="w-24 shrink-0">
-                          <p className={`text-[11px] font-bold ${isSunday ? 'text-rose-500' : 'text-slate-700'}`}>{getDayLabel(dayNum)}</p>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Hari-{dayNum}</p>
-                        </div>
-                        
-                        <div className="flex-1">
-                          <select 
-                            className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-xs font-bold text-slate-600 outline-none focus:border-primary transition-all appearance-none bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23cbd5e1%22%20stroke-width%3D%223%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22%20/%3E%3C/svg%3E')] bg-[length:12px] bg-[right_1rem_center] bg-no-repeat"
-                            value={patternItems[dayNum] || ''}
-                            onChange={(e) => setPatternItems({...patternItems, [dayNum]: e.target.value})}
-                          >
-                            <option value="">- LIBUR / OFF -</option>
-                            {timetables.map(t => (
-                              <option key={t.id} value={t.id}>[{t.category?.name || 'UMUM'}] {t.name} ({t.jamMasuk})</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                 <div className="space-y-2">
+                    <div className="grid grid-cols-12 gap-4 px-4 py-2 bg-slate-50 border border-slate-200 rounded-t-lg text-xs font-semibold text-slate-600">
+                       <div className="col-span-2">Hari Ke-</div>
+                       <div className="col-span-4">Hari Asumsi</div>
+                       <div className="col-span-6">Penetapan Jadwal</div>
+                    </div>
+                    {Array.from({ length: selectedPattern.cycleDays }).map((_, i) => {
+                       const dayNum = i + 1;
+                       const label = getDayLabel(dayNum);
+                       const isSunday = label === 'Minggu';
+                       
+                       return (
+                          <div key={dayNum} className={`grid grid-cols-12 gap-4 items-center px-4 py-3 border border-slate-200 rounded text-sm transition-colors ${isSunday ? 'bg-rose-50/30' : 'bg-white hover:bg-slate-50'}`}>
+                             <div className="col-span-2 font-medium text-slate-700">Hari {dayNum}</div>
+                             <div className={`col-span-4 font-medium ${isSunday ? 'text-rose-600' : 'text-slate-600'}`}>{label}</div>
+                             <div className="col-span-6">
+                                <select 
+                                   className="mansaba-input !py-1.5 w-full text-sm"
+                                   value={patternItems[dayNum] || ''}
+                                   onChange={(e) => setPatternItems({...patternItems, [dayNum]: e.target.value})}
+                                >
+                                   <option value="">-- Libur / Lepas Dinas --</option>
+                                   {timetables.map(t => (
+                                      <option key={t.id} value={t.id}>{t.name} ({t.jamMasuk} - {t.jamPulang})</option>
+                                   ))}
+                                </select>
+                             </div>
+                          </div>
+                       );
+                    })}
+                 </div>
               </div>
-            ) : (
-              <div className="h-full min-h-[400px] flex flex-col items-center justify-center opacity-30 text-center">
-                <ChevronRight size={32} className="text-slate-400 mb-6" />
-                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Pilih shift pada daftar kiri</h4>
+           ) : (
+              <div className="h-48 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center text-slate-400 gap-3">
+                 <i className="fa-solid fa-arrow-left text-2xl"></i>
+                 <p className="text-sm font-medium">Pilih pola rotasi dari daftar di sebelah kiri untuk melihat susunan hariannya.</p>
               </div>
-            )}
-          </div>
+           )}
         </div>
       </div>
 
-      {/* MODAL EDIT SHIFT */}
-      {showEdit && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-md animate-in fade-in duration-300">
-          <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-lg shadow-2xl relative border border-slate-100">
-            <button onClick={() => setShowEdit(false)} className="absolute top-8 right-8 p-2 text-slate-400 hover:text-slate-600 transition-colors">
-              <CloseIcon size={20} />
-            </button>
-            <h3 className="text-2xl font-bold text-slate-800 mb-2 tracking-tight">Edit Identitas Shift</h3>
-            <p className="text-[10px] font-semibold text-slate-400 mb-8 border-b border-slate-50 pb-6 uppercase tracking-widest">Ubah Tanggal Mulai atau Nama Shift</p>
-            
-            <form onSubmit={handleUpdate} className="space-y-6">
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 px-1">Nama Shift</label>
-                <input className="input-mansaba w-full" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
-              </div>
+      {/* MODAL ADD/EDIT */}
+      {(showAdd || showEdit) && (
+         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+            <div className="bg-white rounded-xl shadow-lg w-full max-w-md p-6 relative">
+               <button onClick={() => { setShowAdd(false); setShowEdit(false); }} className="absolute top-6 right-6 text-slate-400 hover:text-slate-600">
+                  <i className="fa-solid fa-xmark text-xl"></i>
+               </button>
+               
+               <h3 className="text-lg font-semibold text-slate-800 mb-6">{showEdit ? 'Edit Pola Rotasi' : 'Pola Rotasi Baru'}</h3>
+               
+               <form onSubmit={showEdit ? handleUpdate : handleCreate} className="space-y-4">
+                  <div className="space-y-1.5">
+                     <label className="text-sm font-medium text-slate-600">Nama Pola Rotasi <span className="text-rose-500">*</span></label>
+                     <input className="mansaba-input" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="Contoh: Rotasi Security A" required />
+                  </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 px-1">Tgl. Mulai (Awal Hari-1)</label>
-                <input type="date" className="input-mansaba w-full" value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})} required />
-              </div>
+                  <div className="space-y-1.5">
+                     <label className="text-sm font-medium text-slate-600">Tanggal Mulai (Hari 1) <span className="text-rose-500">*</span></label>
+                     <input type="date" className="mansaba-input" value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})} required />
+                  </div>
 
-              <div className="pt-4">
-                <button type="submit" className="btn-mansaba w-full !py-4 shadow-2xl shadow-primary/30 uppercase tracking-[0.2em] font-bold">Simpan Perubahan</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+                  <div className="grid grid-cols-2 gap-4">
+                     <div className="space-y-1.5">
+                        <label className="text-sm font-medium text-slate-600">Jumlah Siklus <span className="text-rose-500">*</span></label>
+                        <input type="number" className="mansaba-input" value={formData.periode} onChange={e => setFormData({...formData, periode: e.target.value})} required min="1" />
+                     </div>
+                     <div className="space-y-1.5">
+                        <label className="text-sm font-medium text-slate-600">Satuan Siklus</label>
+                        <select className="mansaba-input" value={formData.unitPeriode} onChange={e => setFormData({...formData, unitPeriode: e.target.value})}>
+                           <option value="Minggu">Minggu (x7 Hari)</option>
+                           <option value="Hari">Hari</option>
+                        </select>
+                     </div>
+                  </div>
 
-      {/* MODAL TAMBAH SHIFT */}
-      {showAdd && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-md animate-in fade-in duration-300">
-          <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-lg shadow-2xl relative border border-slate-100">
-            <button onClick={() => setShowAdd(false)} className="absolute top-8 right-8 p-2 text-slate-400 hover:text-slate-600 transition-colors">
-              <CloseIcon size={20} />
-            </button>
-            <h3 className="text-2xl font-bold text-slate-800 mb-2 tracking-tight">Tambah Daftar Shift</h3>
-            <p className="text-[10px] font-semibold text-slate-400 mb-8 border-b border-slate-50 pb-6 uppercase tracking-widest">Definisi Siklus Kelompok Kerja</p>
-            
-            <form onSubmit={handleCreate} className="space-y-6">
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 px-1">Nama Shift</label>
-                <input className="input-mansaba w-full" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="Misal: G1, Staf Normal, dll." required />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 px-1">Tgl. Mulai (Awal Hari-1)</label>
-                <input type="date" className="input-mansaba w-full" value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})} required />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 px-1">Nilai Periode</label>
-                  <input type="number" className="input-mansaba w-full" value={formData.periode} onChange={e => setFormData({...formData, periode: e.target.value})} required />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 px-1">Unit Periode</label>
-                  <select className="input-mansaba w-full" value={formData.unitPeriode} onChange={e => setFormData({...formData, unitPeriode: e.target.value})}>
-                    <option value="Minggu">Minggu</option>
-                    <option value="Hari">Hari</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="pt-4">
-                <button type="submit" className="btn-mansaba w-full !py-4 shadow-2xl shadow-primary/30 uppercase tracking-[0.2em] font-bold">Simpan Shift Baru</button>
-              </div>
-            </form>
-          </div>
-        </div>
+                  <div className="pt-4 flex justify-end gap-3 mt-4">
+                     <button type="button" onClick={() => { setShowAdd(false); setShowEdit(false); }} className="px-5 py-2 rounded-lg text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200">Batal</button>
+                     <button type="submit" className="mansaba-btn-primary px-6">
+                        {showEdit ? 'Simpan Pola' : 'Buat Pola'}
+                     </button>
+                  </div>
+               </form>
+            </div>
+         </div>
       )}
     </div>
   );

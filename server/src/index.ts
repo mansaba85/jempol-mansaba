@@ -2,424 +2,119 @@ import express from 'express';
 import cors from 'cors';
 import ZKLib from 'node-zklib';
 import { PrismaClient } from '@prisma/client';
-import { format } from 'date-fns';
+import { format, endOfMonth } from 'date-fns';
+import multer from 'multer';
+import fs from 'fs';
+
+const upload = multer({ dest: 'uploads/' });
 
 const app = express();
 app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 const prisma = new PrismaClient();
 const port = 3001;
 
-// Helper: Cari Master Jadwal yang aktif untuk tanggal tertentu
-async function getActiveMasterSchedule(date: Date) {
-  // 1. Cari jadwal musiman yang aktif (ada rentang tanggal)
-  const seasonal = await prisma.masterSchedule.findFirst({
-    where: {
-      isActive: true,
-      startDate: { lte: date },
-      endDate: { gte: date }
-    }
-  });
-  if (seasonal) return seasonal;
+// --- MASTER DATA & CONFIG ---
 
-  // 2. Fallback: Cari jadwal permanen yang aktif (startDate & endDate null)
-  return await prisma.masterSchedule.findFirst({
-    where: {
-      isActive: true,
-      startDate: null,
-      endDate: null
-    }
-  });
-}
-
-app.use(express.json());
-
-app.get('/', (req, res) => {
-  res.send('API Absensi MANSABA Multi-Device Running...');
-});
-
-//--- PERANGKAT (DEVICE) API ---
-
-// Ambil semua daftar mesin
-app.get('/api/devices', async (req, res) => {
-  const devices = await prisma.device.findMany();
-  res.json(devices);
-});
-
-// Tambah mesin baru
-app.post('/api/devices', async (req, res) => {
-  const { name, ipAddress, port, password } = req.body;
-  try {
-    const device = await prisma.device.create({
-      data: { name, ipAddress, port: parseInt(port), password }
-    });
-    res.json(device);
-  } catch (error: any) {
-    if (error.code === 'P2002') {
-      return res.status(400).json({ error: `IP Address ${ipAddress} sudah terdaftar di sistem.` });
-    }
-    console.error("[Add Device Error]", error);
-    res.status(500).json({ error: 'Gagal menambah mesin. Terjadi kesalahan pada server.' });
-  }
-});
-
-// Hapus mesin
-app.delete('/api/devices/:id', async (req, res) => {
-  await prisma.device.delete({ where: { id: parseInt(req.params.id) } });
-  res.json({ success: true });
-});
-
-//--- PEGAWAI (EMPLOYEE) API ---
-
-// Ambil semua pegawai (plus Pola Shift yang diikuti)
-app.get('/api/employees', async (req, res) => {
-  const employees = await prisma.employee.findMany({
-    include: { 
-      assignedPatterns: {
-        include: { pattern: true },
-        orderBy: { id: 'desc' },
-        take: 1
-      } 
-    },
-    orderBy: { id: 'asc' }
-  });
-  res.json(employees);
-});
-
-// Tambah pegawai baru (+ Hubungkan Jadwal Awal)
-app.post('/api/employees', async (req, res) => {
-  const { id, name, nip, role, transportRate, shiftIds } = req.body;
-  try {
-    const employeeId = parseInt(id);
-    
-    const result = await prisma.$transaction(async (tx) => {
-      // 1. Buat Pegawai
-      const emp = await tx.employee.create({
-        data: { 
-          id: employeeId, 
-          name, 
-          nip, 
-          role, 
-          transportRate: parseFloat(transportRate || 0) 
-        }
-      });
-
-      // 2. Jika ada jadwal awal yang dipilih, hubungkan
-      if (shiftIds && shiftIds.length > 0) {
-        // Gunakan Set untuk memastikan tidak ada duplikat shiftId
-        const uniqueShifts = [...new Set(shiftIds)];
-        await tx.employeeShift.createMany({
-          data: uniqueShifts.map((sid: any) => ({ employeeId, shiftId: parseInt(String(sid)) }))
-        });
-      }
-
-      return emp;
-    });
-
-    res.json(result);
-  } catch (error: any) {
-    if (error.code === 'P2002') {
-      return res.status(400).json({ error: `PIN/ID Pegawai ${id} sudah digunakan oleh pegawai lain.` });
-    }
-    console.error("[Add Employee Error]", error);
-    res.status(500).json({ error: 'Gagal menambah pegawai. Terjadi kesalahan pada server.' });
-  }
-});
-
-// Update data pegawai (Nama, NIP, Role, Honor, Pilihan Shift)
-app.put('/api/employees/:id', async (req, res) => {
-  const { name, nip, role, transportRate, shiftIds } = req.body;
-  try {
-    const employeeId = parseInt(req.params.id);
-    
-    await prisma.$transaction(async (tx) => {
-      // 1. Update info dasar
-      await tx.employee.update({
-        where: { id: employeeId },
-        data: { name, nip, role, transportRate: parseFloat(transportRate || 0) }
-      });
-
-      // 2. Hubungkan ke Shift pilihan (Hapus lama, pasang baru)
-      if (shiftIds) {
-        await tx.employeeShift.deleteMany({ where: { employeeId } });
-        if (shiftIds.length > 0) {
-          // Gunakan Set untuk memastikan tidak ada duplikat shiftId
-          const uniqueShifts = [...new Set(shiftIds)];
-          await tx.employeeShift.createMany({
-            data: uniqueShifts.map((sid: any) => ({ employeeId, shiftId: parseInt(String(sid)) }))
-          });
-        }
-      }
-    });
-
-    res.json({ success: true });
-  } catch (error: any) {
-    console.error("[Update Employee Error]", error);
-    res.status(500).json({ error: error.message || 'Gagal memperbarui data pegawai' });
-  }
-});
-
-// Aksi Massal: Update Shift dan Peran untuk banyak pegawai sekaligus
-app.post('/api/employees/bulk-shift', async (req, res) => {
-  const { employeeIds, shiftIds, role } = req.body;
-  try {
-    const transactions: any[] = [];
-    
-    for (const eid of employeeIds) {
-      // Jika ada perubahan peran
-      if (role) {
-        transactions.push(prisma.employee.update({
-          where: { id: eid },
-          data: { role }
-        }));
-      }
-      // Jika ada perubahan jadwal (shift)
-      if (shiftIds) {
-        transactions.push(prisma.employeeShift.deleteMany({ where: { employeeId: eid } }));
-        transactions.push(prisma.employeeShift.createMany({
-          data: shiftIds.map((sid: number) => ({ employeeId: eid, shiftId: sid }))
-        }));
-      }
-    }
-    
-    await prisma.$transaction(transactions);
-    res.json({ success: true });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Gagal melakukan pembaruan massal' });
-  }
-});
-
-// Hapus pegawai (dengan pembersihan data terkait)
-app.get('/api/employees/:id', async (req, res) => {
-  const employeeId = parseInt(req.params.id);
-  const emp = await prisma.employee.findUnique({
-    where: { id: employeeId },
-    include: { assignedPatterns: { include: { pattern: true } } }
-  });
-  res.json(emp);
-});
-
-app.delete('/api/employees/:id', async (req, res) => {
-  const employeeId = parseInt(req.params.id);
-  try {
-    // Jalankan dalam transaksi agar aman
-    await prisma.$transaction([
-      prisma.employeePattern.deleteMany({ where: { employeeId } }),
-      prisma.employeeShift.deleteMany({ where: { employeeId } }),
-      prisma.attendance.deleteMany({ where: { employeeId } }),
-      prisma.honor.deleteMany({ where: { employeeId } }),
-      prisma.employee.delete({ where: { id: employeeId } })
-    ]);
-    res.json({ success: true });
-  } catch (error) {
-    console.error("[Delete Employee Error]", error);
-    res.status(500).json({ error: 'Gagal menghapus pegawai. Terjadi kesalahan pada sistem database.' });
-  }
-});
-
-// Aksi Massal: Hapus banyak pegawai sekaligus
-app.post('/api/employees/bulk-delete', async (req, res) => {
-  const { employeeIds } = req.body;
-  try {
-    const transactions = employeeIds.map((eid: number) => [
-      prisma.employeeShift.deleteMany({ where: { employeeId: eid } }),
-      prisma.attendance.deleteMany({ where: { employeeId: eid } }),
-      prisma.honor.deleteMany({ where: { employeeId: eid } }),
-      prisma.employee.delete({ where: { id: eid } })
-    ]).flat();
-    
-    await prisma.$transaction(transactions);
-    res.json({ success: true });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Gagal menghapus massal' });
-  }
-});
-
-//--- MASTER JADWAL (MASTER SCHEDULE) API ---
-
-// Ambil semua Master Jadwal
-app.get('/api/master-schedules', async (req, res) => {
-  const masters = await prisma.masterSchedule.findMany({
-    include: { groups: { include: { shifts: true } } },
-    orderBy: { createdAt: 'desc' }
-  });
-  res.json(masters);
-});
-
-// Buat Master Jadwal baru
-app.post('/api/master-schedules', async (req, res) => {
-  const { name, startDate, endDate, isActive } = req.body;
-  try {
-    const master = await prisma.masterSchedule.create({ 
-      data: { 
-        name, 
-        startDate: startDate ? new Date(startDate) : null,
-        endDate: endDate ? new Date(endDate) : null,
-        isActive: isActive || false
-      } 
-    });
-    res.json(master);
-  } catch (error) {
-    res.status(500).json({ error: 'Gagal membuat Master Jadwal' });
-  }
-});
-
-// Update Master Jadwal
-app.put('/api/master-schedules/:id', async (req, res) => {
-  const id = parseInt(req.params.id);
-  const { name, startDate, endDate, isActive } = req.body;
-  try {
-    const master = await prisma.masterSchedule.update({
-      where: { id },
-      data: {
-        name,
-        startDate: startDate ? new Date(startDate) : null,
-        endDate: endDate ? new Date(endDate) : null,
-        isActive: isActive
-      }
-    });
-    res.json(master);
-  } catch (error) {
-    res.status(500).json({ error: 'Gagal memperbarui Master Jadwal' });
-  }
-});
-
-// Hapus Master Jadwal
-app.delete('/api/master-schedules/:id', async (req, res) => {
-  const id = parseInt(req.params.id);
-  // Cascade delete shifts first, then groups, then master
-  const groups = await prisma.shiftGroup.findMany({ where: { masterScheduleId: id } });
-  for (const g of groups) {
-    await prisma.shift.deleteMany({ where: { groupId: g.id } });
-  }
-  await prisma.shiftGroup.deleteMany({ where: { masterScheduleId: id } });
-  await prisma.masterSchedule.delete({ where: { id } });
-  res.json({ success: true });
-});
-
-// --- CATEGORIES ---
+// Categories & Timetables
 app.get('/api/categories', async (req, res) => {
-  const cats = await prisma.category.findMany({ orderBy: { name: 'asc' } });
-  res.json(cats);
+  const categories = await prisma.category.findMany({ include: { timetables: true } });
+  res.json(categories);
 });
 
 app.post('/api/categories', async (req, res) => {
   const { name } = req.body;
-  try {
-    const cat = await prisma.category.create({ data: { name } });
-    res.json(cat);
-  } catch (err: any) {
-    if (err.code === 'P2002') return res.status(400).json({ error: 'Kategori sudah ada' });
-    res.status(500).json({ error: 'Gagal tambah kategori' });
-  }
+  const category = await prisma.category.create({ data: { name } });
+  res.json(category);
 });
 
-app.delete('/api/categories/:id', async (req, res) => {
-  try {
-    await prisma.category.delete({ where: { id: parseInt(req.params.id) } });
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: 'Gagal hapus kategori' }); }
-});
-
-//--- MASTER JAM KERJA (TIMETABLE) API ---
 app.get('/api/timetables', async (req, res) => {
-  const t = await prisma.timetable.findMany({ 
-    include: { category: true },
-    orderBy: { createdAt: 'desc' } 
-  });
-  res.json(t);
+  const timetables = await prisma.timetable.findMany({ include: { category: true } });
+  res.json(timetables);
 });
 
 app.post('/api/timetables', async (req, res) => {
-  try {
-    const { name, categoryId, days, jamMasuk, jamPulang, mulaiScanIn, akhirScanIn, mulaiScanOut, akhirScanOut, color } = req.body;
-    const t = await prisma.timetable.create({
-      data: { 
-        name, 
-        categoryId: categoryId ? parseInt(categoryId) : null,
-        days, jamMasuk, jamPulang, mulaiScanIn, akhirScanIn, mulaiScanOut, akhirScanOut, 
-        color: color || '#086862'
-      }
-    });
-    res.json(t);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Gagal simpan jam kerja' });
-  }
+  const data = req.body;
+  const timetable = await prisma.timetable.create({ data });
+  res.json(timetable);
 });
 
 app.put('/api/timetables/:id', async (req, res) => {
   const id = parseInt(req.params.id);
-  const { name, categoryId, days, jamMasuk, jamPulang, mulaiScanIn, akhirScanIn, mulaiScanOut, akhirScanOut, color } = req.body;
-  try {
-    const t = await prisma.timetable.update({
-      where: { id },
-      data: { 
-        name, 
-        categoryId: categoryId ? parseInt(categoryId) : null,
-        days, jamMasuk, jamPulang, mulaiScanIn, akhirScanIn, mulaiScanOut, akhirScanOut, color 
-      }
-    });
-    res.json(t);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Gagal update jam kerja' });
-  }
+  const timetable = await prisma.timetable.update({ where: { id }, data: req.body });
+  res.json(timetable);
 });
 
 app.delete('/api/timetables/:id', async (req, res) => {
   const id = parseInt(req.params.id);
-  try {
-    // Cek apakah digunakan di Pola Rolling
-    const countItems = await prisma.shiftPatternItem.count({ where: { timetableId: id } });
-    if (countItems > 0) {
-      return res.status(400).json({ error: 'Tidak bisa menghapus: Jadwal ini sedang digunakan dalam Pola Rolling (Roster).' });
-    }
-
-    await prisma.timetable.delete({ where: { id } });
-    res.json({ success: true });
-  } catch (err: any) {
-    console.error(err);
-    res.status(500).json({ error: 'Gagal menghapus data. Pastikan data tidak berelasi dengan tabel lain.' });
-  }
+  await prisma.timetable.delete({ where: { id } });
+  res.json({ success: true });
 });
 
-//--- SIKLUS ROLLING (PATTERN) API ---
+// Shift Patterns
 app.get('/api/patterns', async (req, res) => {
   const patterns = await prisma.shiftPattern.findMany({
-    include: { 
-      items: { include: { timetable: true } },
-      assignments: { include: { employee: true, pattern: true } }
-    },
-    orderBy: { createdAt: 'desc' }
+    include: { items: { include: { timetable: true } } }
   });
   res.json(patterns);
 });
 
 app.post('/api/patterns', async (req, res) => {
+  const { name, category, cycleDays, startDate, items } = req.body;
+  try {
+    const pattern = await prisma.shiftPattern.create({
+      data: {
+        name,
+        category,
+        cycleDays,
+        startDate: startDate ? new Date(startDate) : null,
+        items: {
+          create: items.map((it: any) => ({
+            dayNumber: it.dayNumber,
+            timetableId: it.timetableId
+          }))
+        }
+      }
+    });
+    res.json(pattern);
+  } catch (error) {
+    res.status(500).json({ error: 'Gagal simpan pola' });
+  }
+});
+app.put('/api/patterns/:id', async (req, res) => {
+  const id = parseInt(req.params.id);
   const { name, category, cycleDays, startDate } = req.body;
-  const pattern = await prisma.shiftPattern.create({
-    data: { 
-      name, 
-      category, 
-      cycleDays: parseInt(cycleDays),
-      startDate: startDate ? new Date(startDate) : null
-    }
-  });
-  res.json(pattern);
+  try {
+    const pattern = await prisma.shiftPattern.update({
+      where: { id },
+      data: { 
+        name, 
+        category, 
+        cycleDays, 
+        startDate: startDate ? new Date(startDate) : undefined 
+      }
+    });
+    res.json(pattern);
+  } catch (error) { res.status(500).json({ error: 'Gagal update pola' }); }
 });
 
-app.put('/api/patterns/:id', async (req, res) => {
-  const { name, startDate } = req.body;
-  const p = await prisma.shiftPattern.update({
-    where: { id: parseInt(req.params.id) },
-    data: { 
-      name, 
-      startDate: startDate ? new Date(startDate) : null 
-    }
-  });
-  res.json(p);
+app.post('/api/patterns/:id/items', async (req, res) => {
+  const id = parseInt(req.params.id);
+  const { items } = req.body;
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.shiftPatternItem.deleteMany({ where: { patternId: id } });
+      await tx.shiftPatternItem.createMany({
+        data: items.filter((it: any) => it.timetableId).map((it: any) => ({
+          patternId: id,
+          dayNumber: it.dayNumber,
+          timetableId: it.timetableId
+        }))
+      });
+    });
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: 'Gagal simpan item pola' }); }
 });
 
 app.delete('/api/patterns/:id', async (req, res) => {
@@ -430,754 +125,596 @@ app.delete('/api/patterns/:id', async (req, res) => {
   res.json({ success: true });
 });
 
-app.post('/api/patterns/:id/items', async (req, res) => {
-  const patternId = parseInt(req.params.id);
-  const { items } = req.body;
-  await prisma.shiftPatternItem.deleteMany({ where: { patternId } });
-  const created = await prisma.shiftPatternItem.createMany({
-    data: items.map((it: any) => ({
-      patternId,
-      timetableId: parseInt(it.timetableId),
-      dayNumber: parseInt(it.dayNumber)
-    }))
+// Employees & Assignments
+app.get('/api/employees', async (req, res) => {
+  const employees = await prisma.employee.findMany({
+    include: { 
+      assignedPatterns: { include: { pattern: true }, orderBy: { id: 'desc' }, take: 1 } 
+    },
+    orderBy: { id: 'asc' }
   });
-  res.json(created);
+  res.json(employees);
 });
 
-app.post('/api/employees/patterns', async (req, res) => {
-  const { employeeId, patternId, startDate } = req.body;
-  await prisma.employeePattern.deleteMany({ where: { employeeId: parseInt(employeeId) } });
-  const assignment = await prisma.employeePattern.create({
-    data: {
-      employeeId: parseInt(employeeId),
-      patternId: parseInt(patternId),
-      startDate: new Date(startDate)
-    }
+app.post('/api/employees', async (req, res) => {
+  const { id, name, nip, role, transportRate, patternId, patternStartDate } = req.body;
+  const empId = parseInt(id);
+  const employee = await prisma.employee.upsert({
+    where: { id: empId },
+    update: { name, nip, role, transportRate: parseFloat(transportRate) },
+    create: { id: empId, name, nip, role, transportRate: parseFloat(transportRate) }
   });
-  res.json(assignment);
+
+  if (patternId) {
+    await prisma.employeePattern.deleteMany({ where: { employeeId: empId } });
+    await prisma.employeePattern.create({
+      data: {
+        employeeId: empId,
+        patternId: parseInt(patternId),
+        startDate: new Date(patternStartDate || new Date())
+      }
+    });
+  }
+  res.json(employee);
 });
 
 app.post('/api/employees/bulk-pattern', async (req, res) => {
   const { employeeIds, patternId, startDate } = req.body;
-  
-  if (!employeeIds || !Array.isArray(employeeIds) || !patternId || !startDate) {
-    return res.status(400).json({ error: 'Data tidak lengkap' });
-  }
-
-  const data = employeeIds.map(empId => ({
-    employeeId: parseInt(String(empId)),
-    patternId: parseInt(String(patternId)),
-    startDate: new Date(startDate)
-  }));
-
-  // Hapus plotting lama untuk para pegawai terpilih
-  await prisma.employeePattern.deleteMany({
-    where: { employeeId: { in: employeeIds.map(id => parseInt(String(id))) } }
-  });
-
-  // Buat plotting baru secara massal
-  const result = await prisma.employeePattern.createMany({
-    data: data
-  });
-
-  res.json({ success: true, count: result.count });
-});
-
-//--- KONTINER (SHIFT GROUP) API ---
-
-// Ambil grup berdasarkan Master Jadwal ID
-app.get('/api/groups', async (req, res) => {
-  const { masterId } = req.query;
-  const groups = await prisma.shiftGroup.findMany({
-    where: masterId ? { masterScheduleId: parseInt(String(masterId)) } : {},
-    include: { shifts: true },
-    orderBy: { createdAt: 'asc' }
-  });
-  res.json(groups);
-});
-
-// Buat grup baru di dalam Master Jadwal
-app.post('/api/groups', async (req, res) => {
-  const { name, masterScheduleId } = req.body;
-  const group = await prisma.shiftGroup.create({ 
-    data: { name, masterScheduleId: parseInt(masterScheduleId) } 
-  });
-  res.json(group);
-});
-
-// Hapus grup
-app.delete('/api/groups/:id', async (req, res) => {
-  const groupId = parseInt(req.params.id);
-  await prisma.shift.deleteMany({ where: { groupId } });
-  await prisma.shiftGroup.delete({ where: { id: groupId } });
-  res.json({ success: true });
-});
-
-// Ambil semua shift (untuk pilihan di halaman pegawai)
-app.get('/api/shifts', async (req, res) => {
-  const shifts = await prisma.shift.findMany({
-    include: { group: true }
-  });
-  res.json(shifts);
-});
-
-// Tambah jadwal ke dalam grup
-app.post('/api/shifts', async (req, res) => {
   try {
-    const shift = await prisma.shift.create({ data: req.body });
-    res.json(shift);
+    await prisma.employeePattern.deleteMany({ where: { employeeId: { in: employeeIds } } });
+    await prisma.employeePattern.createMany({
+      data: employeeIds.map((id: number) => ({
+        employeeId: id,
+        patternId: parseInt(patternId),
+        startDate: new Date(startDate)
+      }))
+    });
+    res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: 'Gagal membuat jadwal' });
+    res.status(500).json({ error: 'Gagal plotting massal' });
   }
 });
 
-// Update jadwal
-app.put('/api/shifts/:id', async (req, res) => {
+app.delete('/api/employees/:id', async (req, res) => {
   const id = parseInt(req.params.id);
-  try {
-    const shift = await prisma.shift.update({
-      where: { id },
-      data: req.body
-    });
-    res.json(shift);
-  } catch (error) {
-    res.status(500).json({ error: 'Gagal memperbarui jadwal' });
-  }
-});
-
-app.delete('/api/shifts/:id', async (req, res) => {
-  await prisma.shift.delete({ where: { id: parseInt(req.params.id) } });
+  await prisma.employeePattern.deleteMany({ where: { employeeId: id } });
+  await prisma.attendance.deleteMany({ where: { employeeId: id } });
+  await prisma.employee.delete({ where: { id } });
   res.json({ success: true });
 });
 
-// --- FITUR SAKTI: DUPLIKAT GRUP ---
-app.post('/api/groups/:id/duplicate', async (req, res) => {
-  const oldGroupId = parseInt(req.params.id);
-  try {
-    const oldGroup = await prisma.shiftGroup.findUnique({
-      where: { id: oldGroupId },
-      include: { shifts: true }
-    });
-
-    if (!oldGroup) return res.status(404).send('Group not found');
-
-    // Buat grup baru (misal: "Copy of NORMAL")
-    const newGroup = await prisma.shiftGroup.create({
-      data: { name: `Copy of ${oldGroup.name}` }
-    });
-
-    // Salin semua isinya
-    const newShifts = oldGroup.shifts.map(s => ({
-      ...s,
-      id: undefined, // Biar generate ID baru
-      groupId: newGroup.id,
-      createdAt: undefined,
-      updatedAt: undefined
-    }));
-
-    await prisma.shift.createMany({ data: newShifts });
-
-    res.json(newGroup);
-  } catch (error) {
-    res.status(500).send('Gagal duplikasi');
-  }
+// Device Management
+app.get('/api/devices', async (req, res) => {
+  const devices = await prisma.device.findMany();
+  res.json(devices);
 });
 
-// API Laporan Rekap Bulanan (Honor Transport)
-app.get('/api/reports/monthly', async (req, res) => {
-  const { month, year, employeeId } = req.query;
-  const m = parseInt(String(month));
-  const y = parseInt(String(year));
-
-  try {
-    // 1. Ambil semua pegawai
-    const employees = await prisma.employee.findMany({
-      where: employeeId !== 'all' ? { id: parseInt(String(employeeId)) } : {}
-    });
-
-    const report = [];
-
-    for (const emp of employees) {
-      const startDate = new Date(y, m - 1, 1);
-      const endDate = new Date(y, m, 0, 23, 59, 59);
-
-      const logs = await prisma.attendance.findMany({
-        where: {
-          employeeId: emp.id,
-          timestamp: { gte: startDate, lte: endDate }
-        },
-        orderBy: { timestamp: 'asc' }
-      });
-
-      // 3. Filter logs yang benar-hari hadir
-      const validDaySet = new Set<string>();
-      
-      for (const log of logs) {
-        const logDate = new Date(log.timestamp);
-        const logDayStr = format(logDate, 'yyyy-MM-dd');
-        const logTimeStr = format(logDate, 'HH:mm');
-        const dayOfWeekIndex = logDate.getDay(); // 0-6 (0=Sun)
-        
-        // LOGIKA RODA SIKLUS (Recurring Patterns) - PRIORITAS PERTAMA
-        const employeePattern = await prisma.employeePattern.findFirst({
-          where: { employeeId: emp.id },
-          include: { pattern: { include: { items: { include: { timetable: true } } } } }
-        });
-
-        let activeTimetablesForThisLog: any[] = [];
-
-        if (employeePattern) {
-          const { pattern, startDate } = employeePattern;
-          const diffInMs = logDate.getTime() - new Date(startDate).getTime();
-          const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
-          
-          if (diffInDays >= 0) {
-            const dayInCycle = (diffInDays % pattern.cycleDays) + 1;
-            const cycleItem = pattern.items.find(item => item.dayNumber === dayInCycle);
-            if (cycleItem && cycleItem.timetable) {
-              activeTimetablesForThisLog = [cycleItem.timetable];
-            }
-          }
-        }
-
-        // Jika tidak ada pola rolling, lanjut ke Logika Fallback Cerdas (Kategori Jadwal)
-        if (activeTimetablesForThisLog.length === 0) {
-          let master = await prisma.masterSchedule.findFirst({
-            where: {
-              isActive: true,
-              startDate: { lte: logDate },
-              endDate: { gte: logDate },
-              groups: { some: { name: emp.role || '' } }
-            }
-          });
-
-          if (!master) {
-             master = await prisma.masterSchedule.findFirst({
-                where: {
-                  isActive: true,
-                  startDate: null,
-                  endDate: null,
-                  groups: { some: { name: emp.role || '' } }
-                }
-              });
-          }
-
-          if (master) {
-             const group = await prisma.shiftGroup.findFirst({
-                where: { masterScheduleId: master.id, name: emp.role || '' },
-                include: { shifts: true }
-             });
-             // Legacy fallback: convert old Shift model to match Timetable structure for logic below
-             if (group) {
-                activeTimetablesForThisLog = group.shifts.map(s => ({
-                  jamMasuk: s.startTime,
-                  jamPulang: s.endTime,
-                  mulaiScanIn: s.startScanIn,
-                  akhirScanIn: s.endScanIn,
-                  mulaiScanOut: s.startScanOut,
-                  akhirScanOut: s.endScanOut,
-                  days: s.days
-                }));
-             }
-          }
-        }
-
-        if (activeTimetablesForThisLog.length === 0) continue;
-
-        // Validasi Jam Scan berdasarkan Timetable
-        const isScanIn = activeTimetablesForThisLog.some((tt: any) => {
-          const activeDays = (tt.days || "1,2,3,4,5,6").split(',');
-          const normalizedDay = dayOfWeekIndex === 0 ? 7 : dayOfWeekIndex;
-          const isCorrectDay = activeDays.includes(String(normalizedDay));
-          
-          // Jika pakai Pola Rolling, hari minggu/libur diabaikan, ikut nomor hari siklus yang sudah terpilih di atas
-          const isInRange = logTimeStr >= (tt.mulaiScanIn || '00:00') && logTimeStr <= (tt.akhirScanIn || '23:59');
-          return (employeePattern || isCorrectDay) ? isInRange : false; 
-        });
-
-        if (isScanIn) {
-          validDaySet.add(logDayStr);
-        }
-      }
-
-      const totalDays = validDaySet.size;
-      const totalAmount = totalDays * emp.transportRate;
-
-      report.push({
-        employeeId: emp.id,
-        employeeName: emp.name,
-        role: emp.role,
-        totalDays,
-        rate: emp.transportRate,
-        totalAmount
-      });
-    }
-
-    res.json(report);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Gagal menghitung laporan' });
-  }
+app.post('/api/devices', async (req, res) => {
+  const device = await prisma.device.create({ data: req.body });
+  res.json(device);
 });
 
-// API Laporan Rincian Harian (Detail per Tanggal)
-app.get('/api/reports/detailed', async (req, res) => {
-  const { employeeId, startDate, endDate } = req.query;
+app.delete('/api/devices/:id', async (req, res) => {
+  await prisma.device.delete({ where: { id: parseInt(req.params.id) } });
+  res.json({ success: true });
+});
+
+app.post('/api/employees/bulk-delete', async (req, res) => {
+  const { ids } = req.body;
+  if (!ids || !Array.isArray(ids)) return res.status(400).json({ error: 'ID tidak valid' });
   
-  if (!employeeId || employeeId === 'all') {
-    return res.status(400).json({ error: 'Pilih satu pegawai untuk laporan detail' });
-  }
-
   try {
-    const emp = await prisma.employee.findUnique({
-      where: { id: parseInt(String(employeeId)) },
-      include: {
-        assignedPatterns: {
-          include: { pattern: { include: { items: { include: { timetable: true } } } } },
-          orderBy: { id: 'desc' },
-          take: 1
-        }
-      }
-    });
-
-    if (!emp) return res.status(404).json({ error: 'Pegawai tidak ditemukan' });
-
-    const start = new Date(String(startDate));
-    const end = new Date(String(endDate));
-    end.setHours(23, 59, 59, 999);
-
-    // Ambil log absensi (Perluas sampai H+1 untuk handle Shift Malam)
-    const endPlusOne = new Date(end);
-    endPlusOne.setDate(endPlusOne.getDate() + 1);
-    endPlusOne.setHours(23, 59, 59, 999);
-
-    const logs = await prisma.attendance.findMany({
-      where: {
-        employeeId: emp.id,
-        timestamp: { gte: start, lte: endPlusOne }
-      },
-      orderBy: { timestamp: 'asc' }
-    });
-
-    const report = [];
-    const currentDate = new Date(start);
-
-    while (currentDate <= end) {
-      const dateStr = format(currentDate, 'yyyy-MM-dd');
-      const dayNameEn = format(currentDate, 'EEE');
-      const dayMap: { [key: string]: string } = {
-        'Mon': 'Sen', 'Tue': 'Sel', 'Wed': 'Rab', 'Thu': 'Kam', 'Fri': 'Jum', 'Sat': 'Sab', 'Sun': 'Min'
-      };
-      const dayName = dayMap[dayNameEn] || dayNameEn;
-      
-      let timetable: any = null;
-      const employeePattern = emp.assignedPatterns[0];
-
-      // LOGIKA RODA SIKLUS
-      if (employeePattern) {
-        const { pattern, startDate: pStartDate } = employeePattern;
-        const diffInMs = currentDate.getTime() - new Date(pStartDate).getTime();
-        const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
-        
-        if (diffInDays >= 0) {
-          const dayInCycle = (diffInDays % pattern.cycleDays) + 1;
-          const cycleItem = pattern.items.find(item => item.dayNumber === dayInCycle);
-          if (cycleItem && cycleItem.timetable) {
-            const foundT = cycleItem.timetable;
-            
-            // VALIDASI HARI: Pastikan hari pemrosesan diizinkan oleh Timetable tersebut
-            // 0=Sun, 1=Mon, ..., 6=Sat
-            let currentDayNum = currentDate.getDay();
-            if (currentDayNum === 0) currentDayNum = 7; // Sesuaikan jika Minggu dianggap 7
-            
-            const allowedDays = (foundT.days || "1,2,3,4,5,6").split(',').map(Number);
-            // Cek apakah hari ini (1-7) ada di daftar allowedDays
-            if (allowedDays.includes(currentDate.getDay()) || allowedDays.includes(currentDayNum)) {
-              timetable = foundT;
-            }
-          }
-        }
-      }
-
-      // VALIDASI TAMPILAN: Senin-Sabtu selalu tampil, Minggu hanya tampil jika ada jadwal
-      const isSunday = currentDate.getDay() === 0;
-
-      if (!isSunday || timetable) {
-        const dayLogs = logs.filter(l => format(l.timestamp, 'yyyy-MM-dd') === dateStr);
-        
-        let scanIn = '';
-        let scanOut = '';
-        let terlambat = '';
-        let plgCpt = '';
-        let jamKerja = '';
-        let jmlHadir = '';
-
-        if (timetable) {
-          const isOvernight = timetable.jamPulang < timetable.jamMasuk;
-          const nextDateStr = format(new Date(currentDate.getTime() + 86400000), 'yyyy-MM-dd');
-
-          // Scan Masuk (Selalu di hari yang sama)
-          const scanInLog = dayLogs.find(l => {
-            const time = format(l.timestamp, 'HH:mm');
-            return time >= (timetable.mulaiScanIn || '00:00') && time <= (timetable.akhirScanIn || '23:59');
-          });
-
-          // Scan Keluar (Bisa di hari yang sama atau hari berikutnya jika overnight)
-          const targetOutLogs = isOvernight 
-            ? logs.filter(l => format(l.timestamp, 'yyyy-MM-dd') === nextDateStr)
-            : dayLogs;
-
-          const scanOutLog = [...targetOutLogs].reverse().find(l => {
-            const time = format(l.timestamp, 'HH:mm');
-            return time >= (timetable.mulaiScanOut || '00:00') && time <= (timetable.akhirScanOut || '23:59');
-          });
-
-          scanIn = scanInLog ? format(scanInLog.timestamp, 'HH.mm') : '';
-          scanOut = scanOutLog ? format(scanOutLog.timestamp, 'HH.mm') : '';
-
-          // Hitung Terlambat
-          if (scanInLog && timetable.jamMasuk) {
-            const actualH = scanInLog.timestamp.getHours();
-            const actualM = scanInLog.timestamp.getMinutes();
-            const [reqH, reqM] = timetable.jamMasuk.split(/[:.]/).map(Number);
-            const diff = (actualH * 60 + actualM) - (reqH * 60 + reqM);
-            if (diff > 0) {
-              const h = Math.floor(diff / 60);
-              const m = diff % 60;
-              terlambat = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-            }
-          }
-
-          // Hitung Pulang Cepat
-          if (scanOutLog && timetable.jamPulang) {
-            let actualH = scanOutLog.timestamp.getHours();
-            const actualM = scanOutLog.timestamp.getMinutes();
-            if (isOvernight) actualH += 24; // Tambah 24 jam untuk pembanding
-
-            const [reqH, reqM] = timetable.jamPulang.split(/[:.]/).map(Number);
-            const reqH_adj = isOvernight ? reqH + 24 : reqH;
-
-            const diff = (reqH_adj * 60 + reqM) - (actualH * 60 + actualM);
-            if (diff > 0) {
-              const h = Math.floor(diff / 60);
-              const m = diff % 60;
-              plgCpt = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-            }
-          }
-
-          // Hitung Jam Kerja & Jumlah Hadir
-          if (timetable.jamMasuk && timetable.jamPulang) {
-            const partsIn = timetable.jamMasuk.split(/[:.]/);
-            const partsOut = timetable.jamPulang.split(/[:.]/);
-            let h1 = parseInt(partsIn[0]);
-            let h2 = parseInt(partsOut[0]);
-            const m1 = parseInt(partsIn[1]);
-            const m2 = parseInt(partsOut[1]);
-            
-            if (isOvernight) h2 += 24;
-
-            if (!isNaN(h1) && !isNaN(m1) && !isNaN(h2) && !isNaN(m2)) {
-              const diff = (h2 * 60 + m2) - (h1 * 60 + m1);
-              if (diff > 0) {
-                jamKerja = `${Math.floor(diff/60).toString().padStart(2,'0')}.${(diff%60).toString().padStart(2,'0')}`;
-              }
-            }
-          }
-
-          if (scanInLog && scanOutLog) {
-            let diff = Math.floor((scanOutLog.timestamp.getTime() - scanInLog.timestamp.getTime()) / 60000);
-            if (!isNaN(diff) && diff > 0) {
-              jmlHadir = `${Math.floor(diff/60).toString().padStart(2,'0')}.${(diff%60).toString().padStart(2,'0')}`;
-            }
-          }
-        }
-
-        report.push({
-          hari: dayName,
-          tanggal: format(currentDate, 'dd/MM/yyyy'),
-          jamMasuk: timetable?.jamMasuk || '',
-          scanMasuk: scanIn,
-          terlambat,
-          jamPulang: timetable?.jamPulang || '',
-          scanKeluar: scanOut,
-          plgCpt,
-          lembur: '',
-          jamKerja,
-          jmlHadir
-        });
-      }
-
-      currentDate.setDate(currentDate.getDate() + 1);
-    }
-
-    res.json(report);
+    const numericIds = ids.map(Number);
+    await prisma.employeePattern.deleteMany({ where: { employeeId: { in: numericIds } } });
+    await prisma.attendance.deleteMany({ where: { employeeId: { in: numericIds } } });
+    await prisma.employee.deleteMany({ where: { id: { in: numericIds } } });
+    res.json({ success: true });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Gagal memproses laporan detail' });
-  }
-});
-
-// Input Manual Absensi (Buat/Koreksi/Hapus log manual)
-app.post('/api/attendance/manual', async (req, res) => {
-  const { employeeId, date, time, type } = req.body;
-  try {
-    const empId = parseInt(employeeId);
-    const startOfDay = new Date(`${date}T00:00:00`);
-    const endOfDay = new Date(`${date}T23:59:59`);
-
-    // LOGIKA HAPUS: Jika jam kosong, hapus data MANUAL di tanggal tersebut
-    if (!time || time.trim() === "" || time === "-") {
-      await prisma.attendance.deleteMany({
-        where: {
-          employeeId: empId,
-          timestamp: { gte: startOfDay, lte: endOfDay },
-          isManual: true
-        }
-      });
-      return res.json({ success: true, message: 'Data manual berhasil dihapus.' });
-    }
-
-    const cleanTime = time.replace('.', ':');
-    const timestamp = new Date(`${date}T${cleanTime}:00`);
-
-    if (isNaN(timestamp.getTime())) {
-      return res.status(400).json({ error: 'Format waktu tidak valid.' });
-    }
-
-    const result = await prisma.attendance.upsert({
-      where: {
-        employeeId_timestamp: {
-          employeeId: empId,
-          timestamp: timestamp
-        }
-      },
-      update: {
-        isManual: true,
-        note: 'Update Manual Admin'
-      },
-      create: {
-        employeeId: empId,
-        timestamp: timestamp,
-        type: 'CHECK',
-        isManual: true,
-        note: 'Input Manual Admin'
-      }
-    });
-
-    res.json({ success: true, data: result });
-  } catch (error: any) {
-    console.error("[Manual Attendance Error]", error);
-    res.status(500).json({ error: 'Gagal memproses data manual: ' + error.message });
-  }
-});
-
-// Ambil log absensi (dengan Nama Pegawai & Nama Mesin)
-app.get('/api/logs', async (req, res) => {
-  const { search, startDate, endDate } = req.query;
-  try {
-    let whereClause: any = {};
-    
-    // Filter Nama
-    if (search) {
-      whereClause.employee = {
-        name: { contains: String(search) }
-      };
-    }
-
-    // Filter Tanggal
-    if (startDate || endDate) {
-      whereClause.timestamp = {};
-      if (startDate) whereClause.timestamp.gte = new Date(String(startDate));
-      if (endDate) {
-        const end = new Date(String(endDate));
-        end.setHours(23, 59, 59, 999);
-        whereClause.timestamp.lte = end;
-      }
-    }
-
-    const totalCount = await prisma.attendance.count({ where: whereClause });
-    const logs = await prisma.attendance.findMany({
-      where: whereClause,
-      include: {
-        employee: { select: { name: true } }
-      },
-      orderBy: { timestamp: 'desc' },
-      take: 5000 
-    });
-    
-    const devices = await prisma.device.findMany();
-    const deviceMap = new Map(devices.map(d => [d.id, d.name]));
-
-    const formattedLogs = logs.map(l => ({
-      ...l,
-      employeeName: l.employee.name,
-      deviceName: deviceMap.get(l.deviceId || 0) || 'Mesin Lokal'
-    }));
-
-    res.json({ logs: formattedLogs, totalCount });
-  } catch (error) {
-    res.status(500).json({ error: 'Gagal mengambil log' });
+    console.error("[Bulk Delete Error]", error);
+    res.status(500).json({ error: 'Gagal hapus massal: ' + (error instanceof Error ? error.message : 'Unknown') });
   }
 });
 
 // Cek status mesin (Versi ringkas untuk tombol Hubungkan)
 app.get('/api/machine/status', async (req, res) => {
   try {
-    const firstDevice = await prisma.device.findFirst();
+    const firstDevice = await prisma.device.findFirst({ where: { isActive: true } });
     if (!firstDevice) return res.json({ status: 'No Device', dbCount: 0 });
 
-    const zk = new ZKLib(firstDevice.ipAddress, firstDevice.port, 5000, 4000);
+    const zk = new ZKLib(firstDevice.ipAddress, firstDevice.port, 12000, 5000); 
     await zk.createSocket();
     const info = await zk.getInfo();
-    const users = await zk.getUsers();
+    
+    let userCount = 0;
+    try {
+      const users = await zk.getUsers();
+      userCount = users.data?.length || info.userCount || 0;
+    } catch (uErr) {
+      console.warn("[Status] Gagal ambil user list, gunakan info fallback");
+      userCount = info.userCount || 0;
+    }
+
     await zk.disconnect();
     
     const dbCount = await prisma.attendance.count();
     res.json({ 
       status: 'Connected', 
       dbCount,
-      info: { logCount: info.logCount, userCount: users.data.length }
+      info: { 
+        logCount: info.logCount || 0, 
+        userCount: userCount 
+      }
     });
   } catch (error) {
+    console.error("[Status Error]", error);
     const dbCount = await prisma.attendance.count().catch(() => 0);
     res.json({ status: 'Error', dbCount });
   }
 });
 
-// Cek status satu mesin spesifik via ID
 app.get('/api/machine/status/:id', async (req, res) => {
   const device = await prisma.device.findUnique({ where: { id: parseInt(req.params.id) } });
-  if (!device) return res.status(404).json({ error: 'Mesin tidak ditemukan' });
-
-  const zkInstance = new ZKLib(device.ipAddress, device.port, 5000, 4000);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+  const zk = new ZKLib(device.ipAddress, device.port, 10000, 4000);
   try {
-    await zkInstance.createSocket();
-    const info = await zkInstance.getInfo();
-    const users = await zkInstance.getUsers();
-    await zkInstance.disconnect();
-    
-    res.json({ 
-      status: 'Connected', 
-      info: {
-        logCount: info.logCount,
-        userCount: users.data.length || info.userCount
-      } 
-    });
+    await zk.createSocket();
+    const info = await zk.getInfo();
+    await zk.disconnect();
+    res.json({ status: 'Connected', info });
   } catch (error) {
     res.json({ status: 'Error' });
   }
 });
 
-// Sinkronisasi SEMUA mesin sekaligus (SSE)
+// --- ATTENDANCE & SYNC ---
+
+app.get('/api/logs', async (req, res) => {
+  const { search, startDate, endDate } = req.query;
+  let where: any = {};
+  if (search) where.employee = { name: { contains: String(search) } };
+  if (startDate || endDate) {
+    where.timestamp = {};
+    if (startDate) where.timestamp.gte = new Date(String(startDate));
+    if (endDate) where.timestamp.lte = new Date(new Date(String(endDate)).setHours(23,59,59));
+  }
+  const logs = await prisma.attendance.findMany({
+    where, include: { employee: true }, orderBy: { timestamp: 'desc' }, take: 1000
+  });
+  res.json({ logs });
+});
+
+app.post('/api/attendance/manual', async (req, res) => {
+  const { employeeId, date, time } = req.body;
+  // Pastikan jam menggunakan format HH:mm
+  const timeStr = time.replace('.', ':');
+  // Buat tanggal dalam konteks waktu lokal Indonesia (UTC+7)
+  const timestamp = new Date(`${date}T${timeStr}:00+07:00`);
+  
+  await prisma.attendance.upsert({
+    where: { employeeId_timestamp: { employeeId: parseInt(employeeId), timestamp } },
+    update: { isManual: true },
+    create: { employeeId: parseInt(employeeId), timestamp, type: 'CHECK', isManual: true }
+  });
+  res.json({ success: true });
+});
+
+// Sync SSE
 app.get('/api/machine/sync-all', async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
-
-  const sendProgress = (step: string, percent: number, details?: string) => {
-    res.write(`data: ${JSON.stringify({ step, percent, details })}\n\n`);
-  };
-
+  const sendProgress = (step: string, percent: number, details?: string) => res.write(`data: ${JSON.stringify({ step, percent, details })}\n\n`);
+  
   try {
     const activeDevices = await prisma.device.findMany({ where: { isActive: true } });
-    sendProgress(`Memulai sinkronisasi ${activeDevices.length} perangkat...`, 5);
-
-    let deviceIndex = 0;
-    for (const dev of activeDevices) {
-      deviceIndex++;
-      const basePercent = Math.floor(((deviceIndex - 1) / activeDevices.length) * 100);
-      
-      sendProgress(`[${dev.name}] Menghubungkan ke ${dev.ipAddress}...`, basePercent + 5);
-      
-      const zk = new ZKLib(dev.ipAddress, dev.port, 40000, 10000);
-      try {
-        await zk.createSocket();
-        const logs = await zk.getAttendances();
-        console.log(`[Sync] ${dev.name} - Total di Mesin: ${logs.data.length}`);
-        sendProgress(`[${dev.name}] Mengunduh ${logs.data.length} data...`, basePercent + 10);
-
-        sendProgress('Memproses data pegawai...', 50);
-        const users = await zk.getUsers(); 
-        // Menggunakan userId (PIN) bukan uid (Internal index)
-        const userMap = new Map(users.data.map((u: any) => [u.userId, u.name]));
-
-        const uids = [...new Set(logs.data.map((l: any) => l.deviceUserId))];
-        for (const uidStr of uids as string[]) {
-          const uid = parseInt(uidStr);
-          const machineName = userMap.get(uidStr);
-          
-          // Jika tidak ada nama di mesin, cek apakah sudah ada di DB kita
-          if (!machineName || machineName.trim() === "") {
-            const existing = await prisma.employee.findUnique({ where: { id: uid } });
-            if (!existing) {
-              console.log(`[Sync] Skip employee ID ${uid} because it has no name and doesn't exist in DB.`);
-              continue; // Abaikan user baru tanpa nama
-            }
-          }
-
-          const finalName = machineName || `Pegawai Baru (${uid})`;
-          await prisma.employee.upsert({
-            where: { id: uid }, 
-            update: { name: finalName }, 
-            create: { id: uid, name: finalName }
-          });
-        }
-
-        // Ambil daftar valid ID yang ada di DB kita (untuk filter log)
-        const dbEmployeeIds = (await prisma.employee.findMany({ select: { id: true } })).map(e => e.id);
-
-        // Incremental sync
-        const last = await prisma.attendance.findFirst({ 
-          where: { deviceId: dev.id },
-          orderBy: { timestamp: 'desc' } 
-        });
-        const lastTs = last ? last.timestamp.getTime() : 0;
-        
-        const now = new Date();
-        const tomorrow = new Date(now.getTime() + (24 * 60 * 60 * 1000));
-
-        const newLogs = logs.data.filter((l: any) => {
-          const logTs = new Date(l.recordTime).getTime();
-          const empId = parseInt(l.deviceUserId);
-          const isKnown = dbEmployeeIds.includes(empId);
-          
-          // Filter: ABAIKAN jika tanggal di mesin lebih dari besok (karena jam mesin mungkin salah)
-          const isFuture = logTs > tomorrow.getTime();
-          return logTs > lastTs && !isFuture && isKnown;
-        });
-
-        console.log(`[Sync] ${dev.name} - Data Baru (Terfilter): ${newLogs.length}`);
-
-        if (newLogs.length > 0) {
-          const result = await prisma.attendance.createMany({
-            data: newLogs.map((l: any) => ({
-              employeeId: parseInt(l.deviceUserId),
-              timestamp: new Date(l.recordTime),
-              type: 'CHECK',
-              deviceId: dev.id
-            })),
-            skipDuplicates: true
-          });
-          console.log(`[Sync] ${dev.name} - Berhasil Simpan: ${result.count}`);
-        }
-
-        await zk.disconnect();
-        sendProgress(`[${dev.name}] Selesai.`, basePercent + Math.floor(100 / activeDevices.length));
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : 'Unknown error';
-        console.error(`[Connection Error] Device ${dev.name}:`, errMsg);
-        sendProgress(`[${dev.name}] Gagal: ${errMsg}`, basePercent + 5, 'Pastikan Attendance Manager PC sudah ditutup.');
-      }
+    if (activeDevices.length === 0) {
+      sendProgress('Tidak ada mesin aktif', 100);
+      res.end();
+      return;
     }
 
-    sendProgress('Semua perangkat selesai disinkronkan!', 100);
+    sendProgress('Inisialisasi Sinkronisasi...', 5);
+    for (const dev of activeDevices) {
+      sendProgress(`Menghubungkan ke ${dev.name}...`, 15);
+      const zk = new ZKLib(dev.ipAddress, dev.port, 20000, 10000);
+      await zk.createSocket();
+      
+      sendProgress(`Mengunduh Log Kehadiran (${dev.name})...`, 35);
+      const logs = await zk.getAttendances();
+      
+      sendProgress(`Mengunduh Data Pegawai (${dev.name})...`, 60);
+      const users = await zk.getUsers();
+      
+      sendProgress(`Memproses Identitas (${dev.name})...`, 75);
+      const userMap = new Map(users.data.map((u: any) => [u.userId, u.name]));
+      for (const uidStr of [...new Set(logs.data.map((l: any) => l.deviceUserId))] as string[]) {
+        const uid = parseInt(uidStr);
+        const machineName = userMap.get(uidStr);
+        
+        if (!machineName || machineName.trim() === "") {
+          const existing = await prisma.employee.findUnique({ where: { id: uid } });
+          if (!existing) {
+            console.log(`[Sync] Abaikan ID ${uid} karena tidak bernama dan tidak ada di DB.`);
+            continue; 
+          }
+        }
+
+        const finalName = machineName || `Pegawai ${uid}`;
+        await prisma.employee.upsert({ 
+          where: { id: uid }, 
+          update: { name: finalName }, 
+          create: { id: uid, name: finalName } 
+        });
+      }
+
+      sendProgress(`Menyimpan Riwayat Baru (${dev.name})...`, 90);
+      const dbIds = (await prisma.employee.findMany({ select: { id: true } })).map(e => e.id);
+      const last = await prisma.attendance.findFirst({ where: { deviceId: dev.id }, orderBy: { timestamp: 'desc' } });
+      const lastTs = last ? last.timestamp.getTime() : 0;
+      const newLogs = logs.data.filter((l: any) => {
+        const t = new Date(l.recordTime).getTime();
+        return t > lastTs && t < (Date.now() + 86400000) && dbIds.includes(parseInt(l.deviceUserId));
+      });
+      if (newLogs.length > 0) {
+        await prisma.attendance.createMany({
+          data: newLogs.map((l: any) => ({ employeeId: parseInt(l.deviceUserId), timestamp: new Date(l.recordTime), type: 'CHECK', deviceId: dev.id })),
+          skipDuplicates: true
+        });
+      }
+      await zk.disconnect();
+    }
+    sendProgress('Success!', 100);
     res.end();
-  } catch (error) {
-    sendProgress('Global Error', 0, 'Terjadi kesalahan sistem.');
-    res.end();
+  } catch (error: any) { 
+    console.error("[Sync Error]", error);
+    sendProgress('Error', 5, "Koneksi ke mesin terputus atau mesin terlalu sibuk.");
+    res.end(); 
   }
 });
 
-app.listen(port, () => {
-  console.log(`Backend Absensi MANSABA Multi-Device aktif di port ${port}`);
+// Laporan Detail Harian per Kursi/Pegawai
+app.get('/api/reports/detailed', async (req, res) => {
+  const { employeeId, startDate, endDate } = req.query;
+  try {
+    const empId = parseInt(String(employeeId));
+    const start = new Date(`${startDate}T00:00:00+07:00`);
+    const end = new Date(`${endDate}T23:59:59+07:00`);
+    
+    const emp = await prisma.employee.findUnique({
+      where: { id: empId },
+      include: { assignedPatterns: { include: { pattern: { include: { items: { include: { timetable: true } } } } } } }
+    });
+    if (!emp) return res.status(404).json({ error: 'Pegawai tidak ditemukan' });
+
+    const logs = await prisma.attendance.findMany({
+      where: { employeeId: empId, timestamp: { gte: start, lte: new Date(end.getTime() + 86400000) } },
+      orderBy: { timestamp: 'asc' }
+    });
+
+    const report = [];
+    const sysS = await prisma.systemSetting.findMany();
+    const sMap = new Map(sysS.map(s => [s.key, s.value]));
+    const pL = parseInt(sMap.get('penalty_late_minutes') || '0');
+    const pE = parseInt(sMap.get('penalty_early_minutes') || '0');
+
+    let cd = new Date(start);
+    while (cd <= end) {
+      // Gunakan Intl untuk mendapatkan tanggal dalam WIB (Asia/Jakarta)
+      const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(cd);
+      let tt: any = null;
+      const ep = emp.assignedPatterns[0];
+      if (ep && ep.pattern?.startDate) {
+        // Always anchor cycle to the Pattern's universal startDate
+        const dS = new Date(ep.pattern.startDate); dS.setHours(0,0,0,0);
+        const dC = new Date(cd); dC.setHours(0,0,0,0);
+        const diff = Math.round((dC.getTime() - dS.getTime()) / 86400000);
+        if (diff >= 0) {
+          const dy = (diff % ep.pattern.cycleDays) + 1;
+          const ci = ep.pattern.items.find(i => i.dayNumber === dy);
+          if (ci?.timetable) {
+            let dow = cd.getDay(); if (dow === 0) dow = 7;
+            const tD = (ci.timetable.days || "1,2,3,4,5,6").split(',').map(Number);
+            if (tD.includes(cd.getDay()) || tD.includes(dow)) tt = ci.timetable;
+          }
+        }
+      }
+
+      if (cd.getDay() !== 0 || tt) {
+        const dLogs = logs.filter(l => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(l.timestamp) === dateStr);
+        let sIn = '', sOut = '', late = '', early = '', workH = '';
+
+        if (tt) {
+          const isO = tt.jamPulang < tt.jamMasuk;
+          const [thM, tmM] = tt.jamMasuk.split(/[:.]/).map(Number);
+          const [thP, tmP] = tt.jamPulang.split(/[:.]/).map(Number);
+
+          const iLog = dLogs.find(l => {
+            const hStr = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(l.timestamp);
+            if (l.isManual) {
+              const [lh, lm] = hStr.split(':').map(Number);
+              const dM = Math.abs((lh * 60 + lm) - (thM * 60 + tmM));
+              const dP = Math.abs((lh * 60 + lm) - (thP * 60 + tmP));
+              return dM <= dP; // Lebih dekat ke jam masuk
+            }
+            return hStr >= (tt.mulaiScanIn || '00:00') && hStr <= (tt.akhirScanIn || '23:59');
+          });
+
+          const targetOut = isO ? logs.filter(l => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(l.timestamp) === new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date(cd.getTime() + 86400000))) : dLogs;
+          const oLog = [...targetOut].reverse().find(l => {
+            const hStr = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(l.timestamp);
+            if (l.isManual) {
+              const [lh, lm] = hStr.split(':').map(Number);
+              const dM = Math.abs((lh * 60 + lm) - (thM * 60 + tmM));
+              const dP = Math.abs((lh * 60 + lm) - (thP * 60 + tmP));
+              return dP < dM; // Lebih dekat ke jam pulang
+            }
+            return hStr >= (tt.mulaiScanOut || '00:00') && hStr <= (tt.akhirScanOut || '23:59');
+          });
+
+          if (iLog) sIn = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(iLog.timestamp).replace(':', '.');
+          if (oLog) sOut = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(oLog.timestamp).replace(':', '.');
+
+          if (iLog && tt.jamMasuk) {
+            const [hIdx, mIdx] = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(iLog.timestamp).split(':').map(Number);
+            const d = (hIdx * 60 + mIdx) - (thM * 60 + tmM);
+            if (d > 0) late = `${Math.floor(d/60).toString().padStart(2,'0')}:${(d%60).toString().padStart(2,'0')}`;
+          } else if (!iLog && oLog && tt.jamMasuk && pL > 0) {
+            late = `${Math.floor(pL/60).toString().padStart(2,'0')}:${(pL%60).toString().padStart(2,'0')}`;
+          }
+
+          if (oLog && tt.jamPulang) {
+            const [hIdx, mIdx] = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(oLog.timestamp).split(':').map(Number);
+            const haP = isO ? thP + 24 : thP; let ah = hIdx; if (isO) ah += 24;
+            const d = (haP * 60 + tmP) - (ah * 60 + mIdx);
+            if (d > 0) early = `${Math.floor(d/60).toString().padStart(2,'0')}:${(d%60).toString().padStart(2,'0')}`;
+          } else if (!oLog && iLog && tt.jamPulang && pE > 0) {
+            early = `${Math.floor(pE/60).toString().padStart(2,'0')}:${(pE%60).toString().padStart(2,'0')}`;
+          }
+        } else if (dLogs.length > 0) {
+          // JIKA TIDAK ADA JADWAL (TT NULL), tapi ada log di hari itu
+          const sorted = [...dLogs].sort((a,b) => a.timestamp.getTime() - b.timestamp.getTime());
+          sIn = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(sorted[0].timestamp).replace(':', '.');
+          if (sorted.length > 1) {
+            sOut = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(sorted[sorted.length-1].timestamp).replace(':', '.');
+          }
+        }
+        report.push({ 
+          hari: new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', weekday: 'long' }).format(cd), 
+          tanggal: new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta' }).format(cd), 
+          jamMasuk: tt?.jamMasuk || '', 
+          scanMasuk: sIn, 
+          terlambat: late, 
+          jamPulang: tt?.jamPulang || '', 
+          scanKeluar: sOut, 
+          plgCpt: early
+        });
+      }
+      cd.setDate(cd.getDate() + 1);
+    }
+    res.json(report);
+  } catch (error) { res.status(500).json({ error: 'Gagal rincian' }); }
 });
+
+app.get('/api/reports/monthly', async (req, res) => {
+  const { employeeId, month, year } = req.query;
+  try {
+    const m = parseInt(String(month)), y = parseInt(String(year));
+    const start = new Date(y, m - 1, 1), end = endOfMonth(start);
+    let employees = [];
+    if (employeeId === 'all') {
+      employees = await prisma.employee.findMany({ include: { assignedPatterns: { include: { pattern: { include: { items: { include: { timetable: true } } } } } } } });
+    } else {
+      const emp = await prisma.employee.findUnique({ where: { id: parseInt(String(employeeId)) }, include: { assignedPatterns: { include: { pattern: { include: { items: { include: { timetable: true } } } } } } } });
+      if (emp) employees = [emp];
+    }
+    const sys = await prisma.systemSetting.findMany();
+    const sMap = new Map(sys.map(s => [s.key, s.value]));
+    const pL = parseInt(sMap.get('penalty_late_minutes') || '0');
+    const pE = parseInt(sMap.get('penalty_early_minutes') || '0');
+
+    const results = [];
+    for (const emp of employees) {
+      const logs = await prisma.attendance.findMany({ where: { employeeId: emp.id, timestamp: { gte: start, lte: new Date(end.getTime() + 86400000) } } });
+      let totalDays = 0, totalLate = 0, totalEarly = 0;
+      let cd = new Date(start);
+      while (cd <= end) {
+        const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(cd);
+        let tt: any = null; const ep = emp.assignedPatterns[0];
+        if (ep && ep.pattern?.startDate) {
+          const dS = new Date(ep.pattern.startDate); dS.setHours(0,0,0,0);
+          const dC = new Date(cd); dC.setHours(0,0,0,0);
+          const diff = Math.round((dC.getTime() - dS.getTime()) / 86400000);
+          if (diff >= 0) {
+            const dy = (diff % ep.pattern.cycleDays) + 1;
+            const ci = ep.pattern.items.find(i => i.dayNumber === dy);
+            if (ci?.timetable) {
+              let dow = cd.getDay(); if (dow === 0) dow = 7;
+              const tD = (ci.timetable.days || "1,2,3,4,5,6").split(',').map(Number);
+              if (tD.includes(cd.getDay()) || tD.includes(dow)) tt = ci.timetable;
+            }
+          }
+        }
+        if (tt) {
+          const isO = tt.jamPulang < tt.jamMasuk;
+          const iLog = logs.find(l => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(l.timestamp) === dateStr && (l.isManual || (() => {
+            const h = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(l.timestamp);
+            return h >= (tt.mulaiScanIn || '00:00') && h <= (tt.akhirScanIn || '23:59');
+          })()));
+          const targetOut = isO ? logs.filter(l => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(l.timestamp) === new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date(cd.getTime() + 86400000))) : logs.filter(l => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(l.timestamp) === dateStr);
+          const oLog = [...targetOut].reverse().find(l => l.isManual || (() => {
+            const h = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(l.timestamp);
+            return h >= (tt.mulaiScanOut || '00:00') && h <= (tt.akhirScanOut || '23:59');
+          })());
+          if (iLog || oLog) {
+            totalDays++;
+            if (iLog) {
+              const [hIdx1, mIdx1] = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(iLog.timestamp).split(':').map(Number);
+              const [h1, m1] = tt.jamMasuk.split(/[:.]/).map(Number);
+              const d1 = (hIdx1 * 60 + mIdx1) - (h1 * 60 + m1);
+              if (d1 > 0) totalLate += d1;
+            } else if (oLog && pL > 0) totalLate += pL;
+
+            if (oLog) {
+              const [hIdx2, mIdx2] = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(oLog.timestamp).split(':').map(Number);
+              const [h2, m2] = tt.jamPulang.split(/[:.]/).map(Number); const h2a = isO ? h2 + 24 : h2;
+              let ah = hIdx2; if (isO) ah += 24;
+              const d2 = (h2a * 60 + m2) - (ah * 60 + mIdx2);
+              if (d2 > 0) totalEarly += d2;
+            } else if (iLog && pE > 0) totalEarly += pE;
+          }
+        }
+        // JIKA TT NULL (Bukan hari kerja), diabaikan sesuai permintaan
+        cd.setDate(cd.getDate() + 1);
+      }
+      results.push({ employeeId: emp.id, employeeName: emp.name, totalDays, totalLate, totalEarly });
+    }
+    res.json(results);
+  } catch (error) { res.status(500).json({ error: 'Gagal ringkasan' }); }
+});
+
+app.get('/api/honor/recap', async (req, res) => {
+  const { month, year } = req.query;
+  const m = parseInt(String(month)), y = parseInt(String(year));
+  const start = new Date(y, m - 1, 1), end = endOfMonth(start);
+  const settings = await prisma.systemSetting.findMany();
+  const sMap = new Map(settings.map(s => [s.key, s.value]));
+  const rU = parseInt(String(sMap.get('rate_umum') || 25000)), rS = parseInt(String(sMap.get('rate_sertif') || 25000)), rL = parseInt(String(sMap.get('rate_tidak_disiplin') || 10000)), vV = parseInt(String(sMap.get('voucher_nominal') || 30000));
+  const pL = parseInt(sMap.get('penalty_late_minutes') || '0');
+  const pE = parseInt(sMap.get('penalty_early_minutes') || '0');
+  const employees = await prisma.employee.findMany({ include: { assignedPatterns: { include: { pattern: { include: { items: { include: { timetable: true } } } } } } } });
+  const results = [];
+  for (const emp of employees) {
+    const logs = await prisma.attendance.findMany({ where: { employeeId: emp.id, timestamp: { gte: start, lte: new Date(end.getTime() + 86400000) } } });
+    let dD = 0, nD = 0, tH = 0;
+    let cd = new Date(start);
+    while (cd <= end) {
+      let tt: any = null; const ep = emp.assignedPatterns[0];
+      if (ep && ep.pattern?.startDate) {
+        const dS = new Date(ep.pattern.startDate); dS.setHours(0,0,0,0);
+        const dC = new Date(cd); dC.setHours(0,0,0,0);
+        const d = Math.round((dC.getTime() - dS.getTime()) / 86400000);
+        if (d >= 0) {
+          const dy = (d % ep.pattern.cycleDays) + 1;
+          const ci = ep.pattern.items.find(i => i.dayNumber === dy);
+          if (ci?.timetable) {
+            let dow = cd.getDay(); if (dow === 0) dow = 7;
+            if ((ci.timetable.days || "1,2,3,4,5,6").split(',').map(Number).includes(cd.getDay()) || (ci.timetable.days || "1,2,3,4,5,6").split(',').map(Number).includes(dow)) tt = ci.timetable;
+          }
+        }
+      }
+      if (tt) {
+        const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(cd);
+        const isO = tt.jamPulang < tt.jamMasuk;
+        const iL = logs.find(l => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(l.timestamp) === dateStr && (l.isManual || (() => {
+          const h = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(l.timestamp);
+          return h >= (tt.mulaiScanIn || '00:00') && h <= (tt.akhirScanIn || '23:59');
+        })()));
+        const targetOut = isO ? logs.filter(l => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(l.timestamp) === new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date(cd.getTime() + 86400000))) : logs.filter(l => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(l.timestamp) === dateStr);
+        const oL = [...targetOut].reverse().find(l => l.isManual || (() => {
+          const h = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(l.timestamp);
+          return h >= (tt.mulaiScanOut || '00:00') && h <= (tt.akhirScanOut || '23:59');
+        })());
+        if (iL || oL) {
+          tH++; let late = false, early = false;
+          if (iL && tt.jamMasuk) {
+            const [hIdx1, mIdx1] = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(iL.timestamp).split(':').map(Number);
+            const [h, m] = tt.jamMasuk.split(/[:.]/).map(Number);
+            if ((hIdx1 * 60 + mIdx1) - (h * 60 + m) > 5) late = true;
+          } else if (!iL && oL && pL > 5) late = true;
+
+          if (oL && tt.jamPulang) {
+            const [hIdx2, mIdx2] = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(oL.timestamp).split(':').map(Number);
+            const [h, m] = tt.jamPulang.split(/[:.]/).map(Number); const ha = isO ? h + 24 : h;
+            let ah = hIdx2; if (isO) ah += 24;
+            if ((ha * 60 + m) - (ah * 60 + mIdx2) > 5) early = true;
+          } else if (!oL && iL && pE > 5) early = true;
+
+          if (!late && !early) dD++; else nD++;
+        }
+      }
+      cd.setDate(cd.getDate() + 1);
+    }
+    const rB = emp.isSertifikasi ? rS : rU;
+    const bruto = (dD * rB) + (nD * rL);
+    results.push({ employeeId: emp.id, employeeName: emp.name, isSertifikasi: emp.isSertifikasi, totalHadir: tH, disciplinedDays: dD, nonDisciplinedDays: nD, bruto, netto: Math.max(0, bruto - vV), voucherNominal: vV });
+  }
+  res.json(results);
+});
+
+// SETTINGS API
+app.get('/api/settings', async (req, res) => res.json(await prisma.systemSetting.findMany()));
+app.post('/api/settings', async (req, res) => {
+  if (req.body.settings) {
+    for (const s of req.body.settings) {
+      await prisma.systemSetting.upsert({
+        where: { key: s.key },
+        update: { value: String(s.value) },
+        create: { key: s.key, value: String(s.value) }
+      });
+    }
+  }
+  if (req.body.sertifikasiIds) {
+    await prisma.employee.updateMany({ data: { isSertifikasi: false } });
+    if (req.body.sertifikasiIds.length > 0) {
+      await prisma.employee.updateMany({ 
+        where: { id: { in: req.body.sertifikasiIds.map(Number) } }, 
+        data: { isSertifikasi: true } 
+      });
+    }
+  }
+  res.json({ success: true });
+});
+
+app.get('/api/settings/backup', async (req, res) => {
+  try {
+    const data = {
+      employees: await prisma.employee.findMany(),
+      categories: await prisma.category.findMany(),
+      timetables: await prisma.timetable.findMany(),
+      patterns: await prisma.shiftPattern.findMany(),
+      patternItems: await prisma.shiftPatternItem.findMany(),
+      employeePatterns: await prisma.employeePattern.findMany(),
+      attendances: await prisma.attendance.findMany(),
+      devices: await prisma.device.findMany(),
+      settings: await prisma.systemSetting.findMany()
+    };
+    res.json(data);
+  } catch (error) { res.status(500).json({ error: 'Gagal backup' }); }
+});
+
+app.post('/api/settings/restore', upload.single('backup'), async (req: any, res: any) => {
+  if (!req.file) return res.status(400).json({ error: 'No file' });
+  try {
+    const data = JSON.parse(fs.readFileSync(req.file.path, 'utf8'));
+    await prisma.$transaction(async (tx) => {
+      await tx.attendance.deleteMany();
+      await tx.honor.deleteMany();
+      await tx.employeePattern.deleteMany();
+      await tx.employeeShift.deleteMany();
+      await tx.shiftPatternItem.deleteMany();
+      await tx.shiftPattern.deleteMany();
+      await tx.timetable.deleteMany();
+      await tx.category.deleteMany();
+      await tx.employee.deleteMany();
+      await tx.device.deleteMany();
+      await tx.systemSetting.deleteMany();
+
+      if (data.employees) await tx.employee.createMany({ data: data.employees });
+      if (data.categories) await tx.category.createMany({ data: data.categories });
+      if (data.timetables) await tx.timetable.createMany({ data: data.timetables });
+      if (data.patterns) await tx.shiftPattern.createMany({ data: data.patterns });
+      if (data.patternItems) await tx.shiftPatternItem.createMany({ data: data.patternItems });
+      if (data.employeePatterns) await tx.employeePattern.createMany({ data: data.employeePatterns });
+      if (data.attendances) await tx.attendance.createMany({ data: data.attendances });
+      if (data.devices) await tx.device.createMany({ data: data.devices });
+      if (data.settings) await tx.systemSetting.createMany({ data: data.settings });
+    });
+    fs.unlinkSync(req.file.path);
+    res.json({ success: true });
+  } catch (error) { 
+    if (req.file) fs.unlinkSync(req.file.path);
+    res.status(500).json({ error: 'Gagal restore' }); 
+  }
+});
+
+app.listen(port, () => console.log(`Server MANSABA Running on port ${port}`));
