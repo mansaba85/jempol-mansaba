@@ -657,12 +657,34 @@ app.get('/api/honor/recap', async (req, res) => {
   const pL = parseInt(sMap.get('penalty_late_minutes') || '0');
   const pE = parseInt(sMap.get('penalty_early_minutes') || '0');
   const employees = await prisma.employee.findMany({ include: { assignedPatterns: { include: { pattern: { include: { items: { include: { timetable: true } } } } } } } });
+  
+  const allLogs = await prisma.attendance.findMany({ 
+    where: { timestamp: { gte: start, lte: new Date(end.getTime() + 86400000) } } 
+  });
+
+  // Pre-process logs into a Map for O(1) lookup
+  const logsMap = new Map();
+  const dateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' });
+  const timeFormatter = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
+  const dayNameFormatter = new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', weekday: 'long' });
+
+  allLogs.forEach(l => {
+    const dStr = dateFormatter.format(l.timestamp);
+    const key = `${l.employeeId}_${dStr}`;
+    if (!logsMap.has(key)) logsMap.set(key, []);
+    logsMap.get(key).push(l);
+  });
+
   const results = [];
   for (const emp of employees) {
-    const logs = await prisma.attendance.findMany({ where: { employeeId: emp.id, timestamp: { gte: start, lte: new Date(end.getTime() + 86400000) } } });
     let dD = 0, nD = 0, tH = 0, tW = 0;
+    
     let cd = new Date(start);
     while (cd <= end) {
+      const dateStr = dateFormatter.format(cd);
+      const key = `${emp.id}_${dateStr}`;
+      const dayLogs = logsMap.get(key) || [];
+
       let tt: any = null; const ep = emp.assignedPatterns[0];
       if (ep && ep.pattern?.startDate) {
         const dS = new Date(ep.pattern.startDate); dS.setHours(0,0,0,0);
@@ -673,33 +695,43 @@ app.get('/api/honor/recap', async (req, res) => {
           const ci = ep.pattern.items.find(i => i.dayNumber === dy);
           if (ci?.timetable) {
             let dow = cd.getDay(); if (dow === 0) dow = 7;
-            if ((ci.timetable.days || "1,2,3,4,5,6").split(',').map(Number).includes(cd.getDay()) || (ci.timetable.days || "1,2,3,4,5,6").split(',').map(Number).includes(dow)) tt = ci.timetable;
+            const validDays = (ci.timetable.days || "1,2,3,4,5,6").split(',').map(Number);
+            if (validDays.includes(cd.getDay()) || validDays.includes(dow)) tt = ci.timetable;
           }
         }
       }
+
       if (tt) {
         tW++;
-        const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(cd);
         const isO = tt.jamPulang < tt.jamMasuk;
-        const iL = logs.find(l => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(l.timestamp) === dateStr && (l.isManual || (() => {
-          const h = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(l.timestamp);
+        const iL = dayLogs.find(l => l.isManual || (() => {
+          const h = timeFormatter.format(l.timestamp);
           return h >= (tt.mulaiScanIn || '00:00') && h <= (tt.akhirScanIn || '23:59');
-        })()));
-        const targetOut = isO ? logs.filter(l => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(l.timestamp) === new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date(cd.getTime() + 86400000))) : logs.filter(l => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(l.timestamp) === dateStr);
+        })());
+
+        let targetOut = dayLogs;
+        if (isO) {
+          const nextDStr = dateFormatter.format(new Date(cd.getTime() + 86400000));
+          targetOut = logsMap.get(`${emp.id}_${nextDStr}`) || [];
+        }
+
         const oL = [...targetOut].reverse().find(l => l.isManual || (() => {
-          const h = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(l.timestamp);
+          const h = timeFormatter.format(l.timestamp);
           return h >= (tt.mulaiScanOut || '00:00') && h <= (tt.akhirScanOut || '23:59');
         })());
+
         if (iL || oL) {
           tH++; let late = false, early = false;
           if (iL && tt.jamMasuk) {
-            const [hIdx1, mIdx1] = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(iL.timestamp).split(':').map(Number);
+            const hStr = timeFormatter.format(iL.timestamp);
+            const [hIdx1, mIdx1] = hStr.split(':').map(Number);
             const [h, m] = tt.jamMasuk.split(/[:.]/).map(Number);
             if ((hIdx1 * 60 + mIdx1) - (h * 60 + m) > 5) late = true;
           } else if (!iL && oL && pL > 5) late = true;
 
           if (oL && tt.jamPulang) {
-            const [hIdx2, mIdx2] = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(oL.timestamp).split(':').map(Number);
+            const hStr = timeFormatter.format(oL.timestamp);
+            const [hIdx2, mIdx2] = hStr.split(':').map(Number);
             const [h, m] = tt.jamPulang.split(/[:.]/).map(Number); const ha = isO ? h + 24 : h;
             let ah = hIdx2; if (isO) ah += 24;
             if ((ha * 60 + m) - (ah * 60 + mIdx2) > 5) early = true;
@@ -710,6 +742,7 @@ app.get('/api/honor/recap', async (req, res) => {
       }
       cd.setDate(cd.getDate() + 1);
     }
+
     const rB = emp.isSertifikasi ? rS : rU;
     const bruto = (dD * rB) + (nD * rL);
     results.push({ 
