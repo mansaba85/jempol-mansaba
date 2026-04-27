@@ -7,7 +7,6 @@ import toast, { Toaster } from 'react-hot-toast';
 const API_URL = '/api';
 
 const HonorPage = () => {
-  const [activeTab, setActiveTab] = useState<'recap' | 'settings'>('recap');
   const [loading, setLoading] = useState(false);
   const [employees, setEmployees] = useState<any[]>([]);
   const [honorData, setHonorData] = useState<any[]>([]);
@@ -21,7 +20,6 @@ const HonorPage = () => {
     penalty_late_minutes: '0',
     penalty_early_minutes: '0'
   });
-  const [certifiedIds, setCertifiedIds] = useState<number[]>([]);
 
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -36,7 +34,6 @@ const HonorPage = () => {
       ]);
       
       setEmployees(empRes.data);
-      setCertifiedIds(empRes.data.filter((e: any) => e.isSertifikasi).map((e: any) => e.id));
       setHonorData(honorRes.data || []);
 
       const newRates = { ...rates };
@@ -55,26 +52,6 @@ const HonorPage = () => {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
-
-  const handleSaveSettings = async () => {
-    setLoading(true);
-    try {
-      await Promise.all([
-        axios.post(`${API_URL}/settings`, { settings: Object.entries(rates).map(([key, value]) => ({ key, value })) }),
-        axios.post(`${API_URL}/employees/certification`, { employeeIds: certifiedIds })
-      ]);
-      toast.success('Pengaturan keuangan berhasil disimpan');
-      fetchData();
-    } catch (err) {
-      toast.error('Gagal menyimpan pengaturan');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const toggleCertified = (empId: number) => {
-    setCertifiedIds(prev => prev.includes(empId) ? prev.filter(i => i !== empId) : [...prev, empId]);
-  };
 
   // Urutan Pegawai Baku sesuai permintaan USER
   const FIXED_ORDER = [
@@ -97,7 +74,6 @@ const HonorPage = () => {
             return finalPosA - finalPosB;
         }
         
-        // Jika keduanya adalah pegawai baru (sama-sama 9999), urutkan alfabet
         return a.employeeName.localeCompare(b.employeeName);
     });
 
@@ -207,6 +183,7 @@ const HonorPage = () => {
     printWindow.document.write(html);
     printWindow.document.close();
   };
+
   const handlePrintSlips = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
@@ -308,193 +285,100 @@ const HonorPage = () => {
            <h2 className="text-2xl font-semibold text-slate-800">Honor Transport</h2>
            <p className="text-sm text-slate-500 mt-1">Laporan rekapitulasi pencairan honor transport presensi.</p>
         </div>
-        
-        <div className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200">
-            <button 
-              onClick={() => setActiveTab('recap')} 
-              className={`px-6 py-2 rounded-lg text-sm font-semibold transition-colors ${activeTab === 'recap' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
-            >
-              Laporan Honor
-            </button>
-            <button 
-              onClick={() => setActiveTab('settings')} 
-              className={`px-6 py-2 rounded-lg text-sm font-semibold transition-colors ${activeTab === 'settings' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
-            >
-              Pengaturan Master
-            </button>
-        </div>
       </div>
 
-      {activeTab === 'recap' ? (
-        <div className="space-y-6">
-           {/* METRICS */}
-           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <SummaryCard label="Total Cair (Netto)" val={`Rp ${filteredHonor.reduce((acc,c)=>acc+(c.netto||0),0).toLocaleString()}`} icon="fa-wallet" color="blue" />
-              <SummaryCard label="Hari Tepat Waktu" val={filteredHonor.reduce((acc,c)=>acc+(c.disciplinedDays||0),0)} icon="fa-check-circle" color="emerald" />
-              <SummaryCard label="Hari Terlambat" val={filteredHonor.reduce((acc,c)=>acc+(c.nonDisciplinedDays||0),0)} icon="fa-clock-rotate-left" color="rose" />
-              <SummaryCard label="Bulan Laporan" val={format(new Date(selectedYear, selectedMonth-1, 1), 'MMMM yyyy', { locale: id })} icon="fa-calendar" color="slate" />
-           </div>
+      <div className="space-y-6">
+          {/* METRICS */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <SummaryCard label="Total Cair (Netto)" val={`Rp ${filteredHonor.reduce((acc,c)=>acc+(c.netto||0),0).toLocaleString()}`} icon="fa-wallet" color="blue" />
+            <SummaryCard label="Hari Tepat Waktu" val={filteredHonor.reduce((acc,c)=>acc+(c.disciplinedDays||0),0)} icon="fa-check-circle" color="emerald" />
+            <SummaryCard label="Hari Terlambat" val={filteredHonor.reduce((acc,c)=>acc+(c.nonDisciplinedDays||0),0)} icon="fa-clock-rotate-left" color="rose" />
+            <SummaryCard label="Bulan Laporan" val={format(new Date(selectedYear, selectedMonth-1, 1), 'MMMM yyyy', { locale: id })} icon="fa-calendar" color="slate" />
+          </div>
 
-           {/* FILTER CONTROL */}
-           <div className="mansaba-card flex flex-col md:flex-row items-center justify-between gap-4">
-              <div className="relative w-full md:w-80">
-                 <i className="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                 <input className="mansaba-input pl-10" placeholder="Cari nama pegawai..." value={search} onChange={e=>setSearch(e.target.value)} />
-              </div>
-              
-              <div className="flex items-center gap-4 w-full md:w-auto">
-                 <div className="flex items-center gap-2">
-                    <span className="text-sm text-slate-500 font-medium">Bulan:</span>
-                    <select className="mansaba-input !py-1.5 w-auto" value={selectedMonth} onChange={e=>setSelectedMonth(parseInt(e.target.value))}>
-                       {Array.from({length:12}, (_,i)=><option key={i+1} value={i+1}>{format(new Date(2022,i,1),'MMMM', {locale: id})}</option>)}
-                    </select>
-                 </div>
-                 <div className="flex items-center gap-2">
-                    <span className="text-sm text-slate-500 font-medium">Tahun:</span>
-                    <select className="mansaba-input !py-1.5 w-auto" value={selectedYear} onChange={e=>setSelectedYear(parseInt(e.target.value))}>
-                       {[2024,2025,2026,2027].map(y=><option key={y} value={y}>{y}</option>)}
-                    </select>
-                 </div>
-                  <button onClick={handlePrintSlips} className="w-10 h-10 rounded-lg border border-slate-200 text-slate-500 hover:text-emerald-600 hover:border-emerald-200 flex items-center justify-center transition-all bg-white" title="Cetak Struk (Slip) Kecil">
-                    <i className="fa-solid fa-receipt"></i>
-                  </button>
-                  <button onClick={handlePrintNewTab} className="w-10 h-10 rounded-lg border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-200 flex items-center justify-center transition-all bg-white" title="Cetak Daftar Laporan">
-                    <i className="fa-solid fa-print"></i>
-                  </button>
-              </div>
-           </div>
+          {/* FILTER CONTROL */}
+          <div className="mansaba-card flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="relative w-full md:w-80">
+                <i className="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                <input className="mansaba-input pl-10" placeholder="Cari nama pegawai..." value={search} onChange={e=>setSearch(e.target.value)} />
+            </div>
+            
+            <div className="flex items-center gap-4 w-full md:w-auto">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-slate-500 font-medium">Bulan:</span>
+                  <select className="mansaba-input !py-1.5 w-auto" value={selectedMonth} onChange={e=>setSelectedMonth(parseInt(e.target.value))}>
+                      {Array.from({length:12}, (_,i)=><option key={i+1} value={i+1}>{format(new Date(2022,i,1),'MMMM', {locale: id})}</option>)}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-slate-500 font-medium">Tahun:</span>
+                  <select className="mansaba-input !py-1.5 w-auto" value={selectedYear} onChange={e=>setSelectedYear(parseInt(e.target.value))}>
+                      {[2024,2025,2026,2027].map(y=><option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+                <button onClick={handlePrintSlips} className="w-10 h-10 rounded-lg border border-slate-200 text-slate-500 hover:text-emerald-600 hover:border-emerald-200 flex items-center justify-center transition-all bg-white" title="Cetak Struk (Slip) Kecil">
+                  <i className="fa-solid fa-receipt"></i>
+                </button>
+                <button onClick={handlePrintNewTab} className="w-10 h-10 rounded-lg border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-200 flex items-center justify-center transition-all bg-white" title="Cetak Daftar Laporan">
+                  <i className="fa-solid fa-print"></i>
+                </button>
+            </div>
+          </div>
 
-           {/* MAIN DATA TABLE */}
-           <div className="mansaba-card-no-pad">
-                 <table className="mansaba-table">
-                    <thead>
-                       <tr>
-                          <th className="mansaba-th text-center w-12">No.</th>
-                          <th className="mansaba-th text-center w-24">No. ID</th>
-                          <th className="mansaba-th">Nama Pegawai</th>
-                          <th className="mansaba-th text-center">Kategori</th>
-                          <th className="mansaba-th text-center w-32">Jml Disiplin</th>
-                          <th className="mansaba-th text-center w-36">Jml Tidak Disiplin</th>
-                          <th className="mansaba-th text-center w-36">Jml Tidak Hadir</th>
-                          <th className="mansaba-th text-right px-6 bg-slate-50 w-44">Total Honor (Rp)</th>
-                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                       {loading ? (
-                         <tr><td colSpan={8} className="text-center py-12 text-slate-500"><i className="fa-solid fa-spinner fa-spin text-xl text-blue-600 mb-2 block"></i> Memuat data hitungan honor...</td></tr>
-                       ) : filteredHonor.length === 0 ? (
-                         <tr><td colSpan={8} className="text-center py-12 text-slate-500">Tidak ada data kehadiran di bulan ini.</td></tr>
-                       ) : filteredHonor.map((h, i) => (
-                          <tr key={h.employeeId} className="tr-hover">
-                             <td className="mansaba-td text-center text-slate-500">
-                                {i + 1}
-                             </td>
-                             <td className="mansaba-td text-center text-slate-500 font-medium">
-                                {h.employeeId}
-                             </td>
-                             <td className="mansaba-td py-4">
-                                <span className="text-sm font-semibold text-slate-800 uppercase">{h.employeeName}</span>
-                             </td>
-                             <td className="mansaba-td text-center">
-                                <span className={`px-4 py-1.5 rounded-full text-[10px] font-bold tracking-wider ${h.isSertifikasi ? 'bg-blue-100/60 text-blue-600 border border-blue-200/50' : 'bg-slate-100/80 text-slate-500 border border-slate-200/50'}`}>
-                                   {h.isSertifikasi ? 'SERTIFIKASI' : 'UMUM'}
-                                </span>
-                             </td>
-                             <td className="mansaba-td text-center text-slate-600">
-                                {h.disciplinedDays}
-                             </td>
-                             <td className="mansaba-td text-center text-slate-600">
-                                {h.nonDisciplinedDays}
-                             </td>
-                             <td className="mansaba-td text-center text-slate-600">
-                                {h.totalAbsent}
-                             </td>
-                             <td className="mansaba-td text-right px-6 bg-slate-50/50">
-                                <span className="font-bold text-slate-800 text-sm">Rp {h.netto.toLocaleString()}</span>
-                             </td>
-                          </tr>
-                       ))}
-                    </tbody>
-                 </table>
-           </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-           {/* RATES SETTINGS */}
-           <div className="lg:col-span-4 space-y-6">
-              <div className="mansaba-card space-y-6">
-                 <h4 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-3">Tarif & Potongan Honor</h4>
-                 <div className="space-y-4">
-                    {[
-                      { key: 'rate_umum', label: 'Tarif Kehadiran Reguler (Rp)', icon: 'fa-money-bill' },
-                      { key: 'rate_sertif', label: 'Tarif Kehadiran Sertifikasi (Rp)', icon: 'fa-money-bill-wave' },
-                      { key: 'rate_tidak_disiplin', label: 'Tarif Jika Terlambat (Rp)', icon: 'fa-clock-rotate-left' },
-                      { key: 'voucher_nominal', label: 'Potongan Uang Makan/Bulan (Rp)', icon: 'fa-utensils' },
-                    ].map(f => (
-                      <div key={f.key} className="space-y-1.5">
-                         <label className="text-xs font-semibold text-slate-600">{f.label}</label>
-                         <div className="relative">
-                            <i className={`fa-solid ${f.icon} absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400`}></i>
-                            <input 
-                              type="number"
-                              className="mansaba-input pl-10 w-full"
-                              value={(rates as any)[f.key]}
-                              onChange={e => setRates({...rates, [f.key]: e.target.value})}
-                            />
-                         </div>
-                      </div>
-                    ))}
-                 </div>
-                 
-                 <button onClick={handleSaveSettings} className="mansaba-btn-primary w-full mt-4 !mt-6 flex justify-center py-2.5">
-                    <i className="fa-solid fa-save mr-2"></i> Simpan Pengaturan
-                 </button>
-              </div>
-           </div>
-
-           {/* CERTIFICATION SELECTION */}
-           <div className="lg:col-span-8 mansaba-card">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
-                 <div>
-                    <h4 className="text-sm font-bold text-slate-800">Status Sertifikasi Pegawai</h4>
-                    <p className="text-xs text-slate-500 mt-1">Gunakan tarif sertifikasi untuk pegawai terpilih</p>
-                 </div>
-                 <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-semibold">
-                   {certifiedIds.length} Terpilih
-                 </span>
-              </div>
-              
-              <div className="relative w-full md:w-80 mb-6">
-                 <i className="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                 <input className="mansaba-input pl-10" placeholder="Cari nama pegawai..." value={search} onChange={e=>setSearch(e.target.value)} />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                 {employees.filter(e => e.name.toLowerCase().includes(search.toLowerCase())).map(emp => (
-                    <label 
-                       key={emp.id}
-                       className={`flex items-center justify-between p-4 rounded-xl border-2 transition-all cursor-pointer ${certifiedIds.includes(emp.id) ? 'bg-indigo-50/50 border-indigo-500' : 'bg-white border-slate-100 hover:border-slate-300'}`}
-                    >
-                       <div className="flex items-center gap-3">
-                          <input 
-                              type="checkbox" 
-                              className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
-                              checked={certifiedIds.includes(emp.id)}
-                              onChange={() => toggleCertified(emp.id)}
-                          />
-                          <div className="flex flex-col">
-                             <span className={`text-sm font-semibold mb-0.5 ${certifiedIds.includes(emp.id) ? 'text-indigo-900' : 'text-slate-700'}`}>{emp.name}</span>
-                             <span className="text-xs text-slate-500">PIN: #{emp.id}</span>
-                          </div>
-                       </div>
-                    </label>
-                 ))}
-              </div>
-           </div>
-        </div>
-      )}
-
-      {/* No more implicit inline print version. Exported via a new tab in JS! */}
+          {/* MAIN DATA TABLE */}
+          <div className="mansaba-card-no-pad">
+                <table className="mansaba-table">
+                  <thead>
+                      <tr>
+                        <th className="mansaba-th text-center w-12">No.</th>
+                        <th className="mansaba-th text-center w-24">No. ID</th>
+                        <th className="mansaba-th">Nama Pegawai</th>
+                        <th className="mansaba-th text-center">Kategori</th>
+                        <th className="mansaba-th text-center w-32">Jml Disiplin</th>
+                        <th className="mansaba-th text-center w-36">Jml Tidak Disiplin</th>
+                        <th className="mansaba-th text-center w-36">Jml Tidak Hadir</th>
+                        <th className="mansaba-th text-right px-6 bg-slate-50 w-44">Total Honor (Rp)</th>
+                      </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                      {loading ? (
+                        <tr><td colSpan={8} className="text-center py-12 text-slate-500"><i className="fa-solid fa-spinner fa-spin text-xl text-blue-600 mb-2 block"></i> Memuat data hitungan honor...</td></tr>
+                      ) : filteredHonor.length === 0 ? (
+                        <tr><td colSpan={8} className="text-center py-12 text-slate-500">Tidak ada data kehadiran di bulan ini.</td></tr>
+                      ) : filteredHonor.map((h, i) => (
+                        <tr key={h.employeeId} className="tr-hover">
+                            <td className="mansaba-td text-center text-slate-500">
+                              {i + 1}
+                            </td>
+                            <td className="mansaba-td text-center text-slate-500 font-medium">
+                              {h.employeeId}
+                            </td>
+                            <td className="mansaba-td py-4">
+                              <span className="text-sm font-semibold text-slate-800 uppercase">{h.employeeName}</span>
+                            </td>
+                            <td className="mansaba-td text-center">
+                              <span className={`px-4 py-1.5 rounded-full text-[10px] font-bold tracking-wider ${h.isSertifikasi ? 'bg-blue-100/60 text-blue-600 border border-blue-200/50' : 'bg-slate-100/80 text-slate-500 border border-slate-200/50'}`}>
+                                  {h.isSertifikasi ? 'SERTIFIKASI' : 'UMUM'}
+                              </span>
+                            </td>
+                            <td className="mansaba-td text-center text-slate-600">
+                              {h.disciplinedDays}
+                            </td>
+                            <td className="mansaba-td text-center text-slate-600">
+                              {h.nonDisciplinedDays}
+                            </td>
+                            <td className="mansaba-td text-center text-slate-600">
+                              {h.totalAbsent}
+                            </td>
+                            <td className="mansaba-td text-right px-6 bg-slate-50/50">
+                              <span className="font-bold text-slate-800 text-sm">Rp {h.netto.toLocaleString()}</span>
+                            </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+          </div>
+      </div>
     </div>
   );
 };
