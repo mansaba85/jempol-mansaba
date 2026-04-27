@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import toast, { Toaster } from 'react-hot-toast';
+import { useSettings } from '../context/SettingsContext';
 import { 
   Settings as SettingsIcon, 
   School, 
@@ -22,11 +23,13 @@ import {
 const API_URL = '/api';
 
 const SettingsPage = () => {
+  const { refreshSettings } = useSettings();
   const [loading, setLoading] = useState(false);
   const [employees, setEmployees] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [sertifikasiIds, setSertifikasiIds] = useState<number[]>([]);
   const [settings, setSettings] = useState({
+    app_name: 'Jariku Mansaba',
     school_name: '',
     school_address: '',
     school_logo: '',
@@ -73,6 +76,7 @@ const SettingsPage = () => {
         settings: payload,
         sertifikasiIds 
       });
+      await refreshSettings();
       toast.success('Pengaturan berhasil disimpan');
     } catch (err) {
       toast.error('Gagal menyimpan pengaturan');
@@ -200,6 +204,15 @@ const SettingsPage = () => {
               </div>
  
               <div className="grid grid-cols-1 md:grid-cols-2 gap-10 relative z-10">
+                 <div className="md:col-span-2 space-y-3">
+                    <label className="text-[9px] font-medium text-blue-600 tracking-[0.3em] ml-2">Application Name</label>
+                    <input 
+                       className="mansaba-input !py-5 font-medium text-base text-blue-600 bg-blue-50/30" 
+                       placeholder="e.g. Jariku Mansaba"
+                       value={settings.app_name}
+                       onChange={e => setSettings({...settings, app_name: e.target.value})}
+                    />
+                 </div>
                  <div className="md:col-span-2 flex flex-col md:flex-row items-center gap-12 mb-6">
                     <div className="relative logo">
                        <div className="w-40 h-40 rounded-[3rem] bg-white/[0.02] border border-slate-200 flex items-center justify-center overflow-hidden transition-colors logo:border-blue-200 shadow-sm">

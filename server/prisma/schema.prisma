@@ -19,6 +19,7 @@ model Employee {
   transportRate     Float        @default(0) // Honor transport per hari hadir
   fingerId          String?
   cardNo            String?
+  pin               String?      // 6 Digit PIN masuk portal
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
   attendances       Attendance[]
@@ -179,4 +180,12 @@ model SystemSetting {
   key     String   @unique // misal: 'rate_umum', 'rate_sertif', 'rate_tidak_disiplin', 'voucher_nominal'
   value   String   @db.LongText
   updatedAt DateTime @updatedAt
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  password  String
+  role      String   @default("ADMIN")
+  createdAt DateTime @default(now())
 }

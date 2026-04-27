@@ -6,14 +6,117 @@ import { format, endOfMonth } from 'date-fns';
 import multer from 'multer';
 import fs from 'fs';
 
+import jwt from 'jsonwebtoken';
+
 const upload = multer({ dest: 'uploads/' });
+const prisma = new PrismaClient();
+const port = 3001;
+const JWT_SECRET = process.env.JWT_SECRET || 'mansaba_super_secret_1985';
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
-const prisma = new PrismaClient();
-const port = 3001;
+
+// --- AUTH & LOGIN ---
+app.post('/api/login', async (req, res) => {
+  const { username, password } = req.body;
+  const user = await prisma.user.findFirst({
+    where: { username, password }
+  });
+  if (user) {
+    const token = jwt.sign(
+      { id: user.id, username: user.username, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+    res.json({ 
+      success: true, 
+      token,
+      user: { username: user.username, role: user.role } 
+    });
+  } else {
+    res.status(401).json({ 
+      success: false, 
+      message: 'Username atau Password salah' 
+    });
+  }
+});
+
+app.post('/api/login/employee', async (req, res) => {
+  const { id, pin } = req.body;
+  const employee = await prisma.employee.findFirst({
+    where: { 
+      id: parseInt(String(id)),
+      pin: String(pin)
+    }
+  });
+  if (employee) {
+    const token = jwt.sign(
+      { id: employee.id, username: employee.name, role: 'EMPLOYEE' },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+    res.json({ 
+      success: true, 
+      token,
+      user: { id: employee.id, username: employee.name, role: 'EMPLOYEE' } 
+    });
+  } else {
+    res.status(401).json({ 
+      success: false, 
+      message: 'NIP atau PIN salah' 
+    });
+  }
+});
+
+// Jalur Baru: Hanya untuk data Publik (Aman untuk halaman Login)
+app.get('/api/settings/public', async (req, res) => {
+  const publicKeys = ['app_name', 'school_name', 'school_logo'];
+  const settings = await prisma.systemSetting.findMany({
+    where: { key: { in: publicKeys } }
+  });
+  res.json(settings);
+});
+
+// Middleware for authentication
+const authenticateToken = (req: any, res: any, next: any) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) return res.status(401).json({ message: 'Akses ditolak. Silakan login.' });
+
+  jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
+    if (err) return res.status(403).json({ message: 'Sesi berakhir. Silakan login kembali.' });
+    req.user = user;
+    next();
+  });
+};
+
+// APPLY PROTECTION TO ALL ROUTES BELOW THIS LINE
+app.use(authenticateToken);
+
+// Auto-seed Initial Admin
+const seedAdmin = async () => {
+  try {
+    const adminExists = await prisma.user.findUnique({
+      where: { username: 'manubyp' }
+    });
+    if (!adminExists) {
+      await prisma.user.create({
+        data: {
+          username: 'manubyp',
+          password: 'Mansaba1985',
+          role: 'ADMIN'
+        }
+      });
+      console.log('✅ Admin user "manubyp" seeded successfully.');
+    }
+  } catch (error) {
+    console.error('❌ Failed to seed admin user:', error);
+  }
+};
+seedAdmin();
 
 // --- SAFETY SHIELD (Cegah Server Mati Jika Mesin Error) ---
 process.on('uncaughtException', (err) => {
@@ -145,12 +248,25 @@ app.get('/api/employees', async (req, res) => {
 });
 
 app.post('/api/employees', async (req, res) => {
-  const { id, name, nip, role, transportRate, patternId, patternStartDate } = req.body;
+  const { id, name, nip, role, transportRate, patternId, patternStartDate, pin } = req.body;
   const empId = parseInt(id);
   const employee = await prisma.employee.upsert({
     where: { id: empId },
-    update: { name, nip, role, transportRate: parseFloat(transportRate) },
-    create: { id: empId, name, nip, role, transportRate: parseFloat(transportRate) }
+    update: { 
+      name, 
+      nip, 
+      role, 
+      transportRate: parseFloat(String(transportRate || 0)),
+      pin: pin ? String(pin) : undefined
+    },
+    create: { 
+      id: empId, 
+      name, 
+      nip, 
+      role, 
+      transportRate: parseFloat(String(transportRate || 0)),
+      pin: pin ? String(pin) : undefined
+    }
   });
 
   if (patternId) {
@@ -164,6 +280,27 @@ app.post('/api/employees', async (req, res) => {
     });
   }
   res.json(employee);
+});
+
+app.put('/api/employees/:id', async (req, res) => {
+  const { name, nip, role, transportRate, pin } = req.body;
+  const empId = parseInt(req.params.id);
+  try {
+    const employee = await prisma.employee.update({
+      where: { id: empId },
+      data: { 
+        name, 
+        nip, 
+        role, 
+        transportRate: parseFloat(String(transportRate || 0)),
+        pin: pin ? String(pin) : undefined
+      }
+    });
+    res.json(employee);
+  } catch (error) {
+    console.error("[Update Employee Error]", error);
+    res.status(500).json({ error: 'Gagal memperbarui data pegawai' });
+  }
 });
 
 app.post('/api/employees/bulk-pattern', async (req, res) => {
@@ -199,6 +336,12 @@ app.delete('/api/employees/:id', async (req, res) => {
 });
 
 // Device Management
+// Settings
+app.get('/api/settings', async (req, res) => {
+  const settings = await prisma.systemSetting.findMany();
+  res.json(settings);
+});
+
 app.get('/api/devices', async (req, res) => {
   const devices = await prisma.device.findMany();
   res.json(devices);
@@ -417,7 +560,12 @@ app.get('/api/machine/storage', async (req, res) => {
 app.get('/api/machine/sync-all', async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  
   const sendProgress = (step: string, percent: number, details?: string) => res.write(`data: ${JSON.stringify({ step, percent, details })}\n\n`);
+  
+  sendProgress('Menyiapkan koneksi...', 5);
   
   try {
     const activeDevices = await prisma.device.findMany({ where: { isActive: true } });
@@ -432,55 +580,198 @@ app.get('/api/machine/sync-all', async (req, res) => {
     const empMap = new Map(employees.map(e => [e.id, e]));
 
     for (const dev of activeDevices) {
-      sendProgress(`Sinkronisasi ${dev.name}...`, 20);
-      const zk = new ZKLib(dev.ipAddress, dev.port, 20000, 10000);
-      await zk.createSocket();
-      const logs = await zk.getAttendances();
-      await zk.disconnect(); 
+      try {
+        sendProgress(`${dev.name}: Menghubungkan...`, (activeDevices.indexOf(dev) / activeDevices.length) * 100);
+        
+        // Timeout diperpanjang ke 30 detik untuk kelancaran
+        const zk = new ZKLib(dev.ipAddress, dev.port, 30000, 10000);
+        await zk.createSocket();
+        
+        const logs = await zk.getAttendances();
+        await zk.disconnect(); 
 
-      const last = await prisma.attendance.findFirst({ where: { deviceId: dev.id }, orderBy: { timestamp: 'desc' } });
-      const lastTs = last ? last.timestamp.getTime() : 0;
-      
-      const logsToSave: any[] = [];
-      for (const l of logs.data) {
+        if (!logs || !logs.data || logs.data.length === 0) {
+          sendProgress(`${dev.name}: Log mesin kosong`, ((activeDevices.indexOf(dev) + 1) / activeDevices.length) * 100);
+          await prisma.device.update({ where: { id: dev.id }, data: { lastSync: new Date() } });
+          continue;
+        }
+
+        const last = await prisma.attendance.findFirst({ where: { deviceId: dev.id }, orderBy: { timestamp: 'desc' } });
+        const lastTs = last ? last.timestamp.getTime() : 0;
+        
+        const logsToSave: any[] = [];
+        for (const l of logs.data) {
+          const uid = parseInt(l.deviceUserId);
+          const tapTime = new Date(l.recordTime);
+          const tapYear = tapTime.getFullYear();
+          
+          if (tapYear < 2020 || tapYear > 2030 || tapTime.getTime() <= lastTs || !empMap.has(uid)) continue;
+
+          const emp = empMap.get(uid)!;
+          const formatTime = (d: Date) => d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
+          const nowTime = formatTime(tapTime);
+
+          let type: string | null = null;
+
+          // 1. Check Today's Schedule
+          for (const ap of emp.assignedPatterns) {
+              const diffDays = Math.floor((tapTime.getTime() - ap.startDate.getTime()) / (1000 * 60 * 60 * 24));
+              const dayInCycle = (diffDays % ap.pattern.cycleDays) + 1;
+              const item = ap.pattern.items.find(i => i.dayNumber === dayInCycle);
+              if (item && item.timetable) {
+                  const tt = item.timetable;
+                  if (nowTime >= (tt.mulaiScanIn || '00:00') && nowTime <= (tt.akhirScanIn || '23:59')) type = 'CHECK IN';
+                  else if (nowTime >= (tt.mulaiScanOut || '00:00') && nowTime <= (tt.akhirScanOut || '23:59')) type = 'CHECK OUT';
+              }
+          }
+
+          // 2. If not found, Check Yesterday's Schedule (for Night Shifts)
+          if (!type) {
+              const yesterday = new Date(tapTime.getTime() - 86400000);
+              for (const ap of emp.assignedPatterns) {
+                  const diffDays = Math.floor((yesterday.getTime() - ap.startDate.getTime()) / (1000 * 60 * 60 * 24));
+                  const dayInCycle = (diffDays % ap.pattern.cycleDays) + 1;
+                  const item = ap.pattern.items.find(i => i.dayNumber === dayInCycle);
+                  if (item && item.timetable) {
+                      const tt = item.timetable;
+                      if (nowTime >= (tt.mulaiScanOut || '00:00') && nowTime <= (tt.akhirScanOut || '23:59')) {
+                          type = 'CHECK OUT';
+                      }
+                  }
+              }
+          }
+
+          if (type) {
+              logsToSave.push({ employeeId: uid, timestamp: tapTime, type, deviceId: dev.id });
+          }
+        }
+
+        if (logsToSave.length > 0) {
+          await prisma.attendance.createMany({ data: logsToSave, skipDuplicates: true });
+          sendProgress(`${dev.name}: Berhasil sinkron ${logsToSave.length} log baru`, ((activeDevices.indexOf(dev) + 1) / activeDevices.length) * 100);
+        } else {
+          sendProgress(`${dev.name}: Tidak ada log baru`, ((activeDevices.indexOf(dev) + 1) / activeDevices.length) * 100);
+        }
+        await prisma.device.update({ where: { id: dev.id }, data: { lastSync: new Date() } });
+      } catch (devErr: any) {
+        console.error(`[Sync Error - ${dev.name}]`, devErr);
+        sendProgress(`${dev.name}: GAGAL (${devErr.message || 'Koneksi Terputus'})`, ((activeDevices.indexOf(dev) + 1) / activeDevices.length) * 100);
+        // Lanjut ke mesin berikutnya
+      }
+    }
+    sendProgress('Sinkronisasi Selesai!', 100);
+  } catch (err: any) { 
+    console.error("[Sync Global Error]", err);
+    sendProgress('ERROR KRITIS: ' + (err.message || 'Terjadi kesalahan sistem'), 100); 
+  }
+  res.end();
+});
+
+// Jalur Baru: Sinkronisasi PER MESIN SPECIFIC
+app.get('/api/machine/sync-one/:id', async (req, res) => {
+  const isSSE = req.headers.accept === 'text/event-stream';
+  
+  if (isSSE) {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+  }
+  
+  const sendProgress = (step: string, percent: number) => {
+    if (isSSE) res.write(`data: ${JSON.stringify({ step, percent })}\n\n`);
+    console.log(`[Sync Device] ${step} (${percent}%)`);
+  };
+  
+  const devId = parseInt(req.params.id);
+  try {
+    const dev = await prisma.device.findUnique({ where: { id: devId } });
+    if (!dev) {
+        if (isSSE) { sendProgress('Perangkat tidak ditemukan', 100); res.end(); }
+        else return res.status(404).json({ error: 'Perangkat tidak ditemukan' });
+        return;
+    }
+
+    sendProgress(`Menghubungkan ke ${dev.name}...`, 10);
+    
+    const employees = await prisma.employee.findMany({
+      include: { assignedPatterns: { include: { pattern: { include: { items: { include: { timetable: true } } } } } } }
+    });
+    const empMap = new Map(employees.map(e => [e.id, e]));
+
+    const zk = new ZKLib(dev.ipAddress, dev.port, 40000, 10000);
+    await zk.createSocket();
+    
+    sendProgress('Mengambil data log...', 40);
+    const logs = await zk.getAttendances();
+    await zk.disconnect();
+
+    if (!logs || !logs.data || logs.data.length === 0) {
+        await prisma.device.update({ where: { id: devId }, data: { lastSync: new Date() } });
+        if (isSSE) { sendProgress('Log di mesin kosong', 100); res.end(); }
+        else res.json({ success: true, message: 'Log kosong' });
+        return;
+    }
+
+    sendProgress(`Memproses ${logs.data.length} log...`, 70);
+    const last = await prisma.attendance.findFirst({ where: { deviceId: devId }, orderBy: { timestamp: 'desc' } });
+    const lastTs = last ? last.timestamp.getTime() : 0;
+    
+    const logsToSave: any[] = [];
+    for (const l of logs.data) {
         const uid = parseInt(l.deviceUserId);
         const tapTime = new Date(l.recordTime);
         const tapYear = tapTime.getFullYear();
-        
-        // Cek Kevalidan: Abaikan tahun "ngaco" dan ID yang tidak terdaftar
         if (tapYear < 2020 || tapYear > 2030 || tapTime.getTime() <= lastTs || !empMap.has(uid)) continue;
 
         const emp = empMap.get(uid)!;
-        let tt: any = null;
-        for (const ap of emp.assignedPatterns) {
-            const diffDays = Math.floor((tapTime.getTime() - ap.startDate.getTime()) / (1000 * 60 * 60 * 24));
-            const dayInCycle = (diffDays % ap.pattern.cycleDays) + 1;
-            const item = ap.pattern.items.find(i => i.dayNumber === dayInCycle);
-            if (item) tt = item.timetable;
-        }
-
-        if (!tt) continue; 
-
         const formatTime = (d: Date) => d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
         const nowTime = formatTime(tapTime);
 
         let type: string | null = null;
-        if (nowTime >= (tt.mulaiScanIn || '00:00') && nowTime <= (tt.akhirScanIn || '23:59')) type = 'CHECK IN';
-        else if (nowTime >= (tt.mulaiScanOut || '00:00') && nowTime <= (tt.akhirScanOut || '23:59')) type = 'CHECK OUT';
-
-        if (type) {
-            logsToSave.push({ employeeId: uid, timestamp: tapTime, type, deviceId: dev.id });
+        for (const ap of emp.assignedPatterns) {
+            const diffDays = Math.floor((tapTime.getTime() - ap.startDate.getTime()) / (1000 * 60 * 60 * 24));
+            const dayInCycle = (diffDays % ap.pattern.cycleDays) + 1;
+            const item = ap.pattern.items.find(i => i.dayNumber === dayInCycle);
+            if (item && item.timetable) {
+                const tt = item.timetable;
+                if (nowTime >= (tt.mulaiScanIn || '00:00') && nowTime <= (tt.akhirScanIn || '23:59')) type = 'CHECK IN';
+                else if (nowTime >= (tt.mulaiScanOut || '00:00') && nowTime <= (tt.akhirScanOut || '23:59')) type = 'CHECK OUT';
+            }
         }
-      }
+        
+        if (!type) {
+            const yesterday = new Date(tapTime.getTime() - 86400000);
+            for (const ap of emp.assignedPatterns) {
+                const diffDays = Math.floor((yesterday.getTime() - ap.startDate.getTime()) / (1000 * 60 * 60 * 24));
+                const dayInCycle = (diffDays % ap.pattern.cycleDays) + 1;
+                const item = ap.pattern.items.find(i => i.dayNumber === dayInCycle);
+                if (item && item.timetable) {
+                    const tt = item.timetable;
+                    if (nowTime >= (tt.mulaiScanOut || '00:00') && nowTime <= (tt.akhirScanOut || '23:59')) type = 'CHECK OUT';
+                }
+            }
+        }
 
-      if (logsToSave.length > 0) {
-        await prisma.attendance.createMany({ data: logsToSave, skipDuplicates: true });
-      }
-      await prisma.device.update({ where: { id: dev.id }, data: { lastSync: new Date() } });
+        if (type) logsToSave.push({ employeeId: uid, timestamp: tapTime, type, deviceId: devId });
     }
-    sendProgress('Selesai!', 100);
-  } catch (err: any) { sendProgress('ERROR: ' + err.message, 100); }
-  res.end();
+
+    if (logsToSave.length > 0) {
+        await prisma.attendance.createMany({ data: logsToSave, skipDuplicates: true });
+        sendProgress(`Berhasil: ${logsToSave.length} data baru`, 100);
+    } else {
+        sendProgress('Tidak ada data baru', 100);
+    }
+
+    await prisma.device.update({ where: { id: devId }, data: { lastSync: new Date() } });
+    if (isSSE) res.end();
+    else res.json({ success: true, count: logsToSave.length });
+
+  } catch (err: any) {
+    console.error("[Sync One Error]", err);
+    if (isSSE) { sendProgress('GAGAL: ' + (err.message || 'Koneksi terputus'), 100); res.end(); }
+    else res.status(500).json({ error: err.message || 'Koneksi terputus' });
+  }
 });
 
 // Jalur 2: Sinkronisasi Pegawai (Akan dipanggil dari Halaman Pegawai)
@@ -499,28 +790,39 @@ app.get('/api/machine/sync-employees', async (req, res) => {
         }
 
         for (const dev of activeDevices) {
-            sendProgress(`Menghubungkan ke ${dev.name}...`, 20);
-            const zk = new ZKLib(dev.ipAddress, dev.port, 15000, 5000);
-            await zk.createSocket();
+            try {
+                sendProgress(`${dev.name}: Menghubungkan...`, (activeDevices.indexOf(dev) / activeDevices.length) * 100);
+                const zk = new ZKLib(dev.ipAddress, dev.port, 20000, 5000);
+                await zk.createSocket();
 
-            sendProgress(`Mengunduh Data Pegawai dari ${dev.name}...`, 50);
-            const users = await zk.getUsers();
-            await zk.disconnect();
+                sendProgress(`${dev.name}: Mengunduh Pegawai...`, 50);
+                const users = await zk.getUsers();
+                await zk.disconnect();
 
-            sendProgress(`Memproses ${users.data.length} pegawai...`, 80);
-            for (const u of users.data) {
-                if (u.name && u.name.trim() !== '') {
-                    await prisma.employee.upsert({
-                        where: { id: parseInt(u.userId) },
-                        update: { name: u.name },
-                        create: { id: parseInt(u.userId), name: u.name }
-                    });
+                if (!users || !users.data || users.data.length === 0) {
+                    sendProgress(`${dev.name}: Tidak ada data pegawai`, ((activeDevices.indexOf(dev) + 1) / activeDevices.length) * 100);
+                    continue;
                 }
+
+                sendProgress(`${dev.name}: Memproses ${users.data.length} pegawai...`, 80);
+                for (const u of users.data) {
+                    if (u.name && u.name.trim() !== '') {
+                        await prisma.employee.upsert({
+                            where: { id: parseInt(u.userId) },
+                            update: { name: u.name },
+                            create: { id: parseInt(u.userId), name: u.name }
+                        });
+                    }
+                }
+                sendProgress(`${dev.name}: Selesai`, ((activeDevices.indexOf(dev) + 1) / activeDevices.length) * 100);
+            } catch (devErr: any) {
+                console.error(`[Sync Employee Error - ${dev.name}]`, devErr);
+                sendProgress(`${dev.name}: GAGAL (${devErr.message || 'Koneksi Terputus'})`, ((activeDevices.indexOf(dev) + 1) / activeDevices.length) * 100);
             }
         }
-        sendProgress('Data Pegawai Berhasil Diperbarui!', 100);
+        sendProgress('Sinkronisasi Pegawai Selesai!', 100);
     } catch (err: any) {
-        sendProgress('ERROR: ' + (err.message || 'Gagal sinkron pegawai'), 100);
+        sendProgress('ERROR KRITIS: ' + (err.message || 'Gagal sinkron pegawai'), 100);
     }
     res.end();
 }); 
@@ -533,6 +835,10 @@ app.get('/api/reports/detailed', async (req, res) => {
     const start = new Date(`${startDate}T00:00:00+07:00`);
     const end = new Date(`${endDate}T23:59:59+07:00`);
     
+    // Gunakan formatter yang sama dengan honor/recap agar presisi
+    const dateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' });
+    const timeFormatter = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
+
     const emp = await prisma.employee.findUnique({
       where: { id: empId },
       include: { assignedPatterns: { include: { pattern: { include: { items: { include: { timetable: true } } } } } } }
@@ -544,20 +850,28 @@ app.get('/api/reports/detailed', async (req, res) => {
       orderBy: { timestamp: 'asc' }
     });
 
-    const report = [];
     const sysS = await prisma.systemSetting.findMany();
     const sMap = new Map(sysS.map(s => [s.key, s.value]));
-    const pL = parseInt(sMap.get('penalty_late_minutes') || '0');
-    const pE = parseInt(sMap.get('penalty_early_minutes') || '0');
+    
+    const rU = parseInt(String(sMap.get('rate_umum') || 25000));
+    const rS = parseInt(String(sMap.get('rate_sertif') || 25000));
+    const rL = parseInt(String(sMap.get('rate_tidak_disiplin') || 10000));
+    const pL = parseInt(sMap.get('penalty_late_minutes') || '5'); // Default 5
+    const pE = parseInt(sMap.get('penalty_early_minutes') || '5'); // Default 5
+    const vV = parseInt(String(sMap.get('voucher_nominal') || 0));
+
+    const rB = emp.isSertifikasi ? rS : rU;
+
+    const days = [];
+    let dD = 0, nD = 0, tH = 0, tW = 0;
 
     let cd = new Date(start);
     while (cd <= end) {
-      // Gunakan Intl untuk mendapatkan tanggal dalam WIB (Asia/Jakarta)
-      const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(cd);
+      const dateStr = dateFormatter.format(cd);
       let tt: any = null;
       const ep = emp.assignedPatterns[0];
+      
       if (ep && ep.pattern?.startDate) {
-        // Always anchor cycle to the Pattern's universal startDate
         const dS = new Date(ep.pattern.startDate); dS.setHours(0,0,0,0);
         const dC = new Date(cd); dC.setHours(0,0,0,0);
         const diff = Math.round((dC.getTime() - dS.getTime()) / 86400000);
@@ -572,80 +886,116 @@ app.get('/api/reports/detailed', async (req, res) => {
         }
       }
 
-      if (cd.getDay() !== 0 || tt) {
-        const dLogs = logs.filter(l => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(l.timestamp) === dateStr);
-        let sIn = '', sOut = '', late = '', early = '', workH = '';
+      const dLogs = logs.filter(l => dateFormatter.format(l.timestamp) === dateStr);
+      let status = tt ? 'ALPA' : 'LIBUR';
+      let lateM = 0;
+      let earlyM = 0;
+      let iLog: any = null;
+      let oLog: any = null;
+      let ttp = 0;
 
-        if (tt) {
-          const isO = tt.jamPulang < tt.jamMasuk;
-          const [thM, tmM] = tt.jamMasuk.split(/[:.]/).map(Number);
-          const [thP, tmP] = tt.jamPulang.split(/[:.]/).map(Number);
+      if (tt) {
+        tW++;
+        const isO = tt.jamPulang < tt.jamMasuk;
+        const [thM, tmM] = tt.jamMasuk.split(/[:.]/).map(Number);
+        const [thP, tmP] = tt.jamPulang.split(/[:.]/).map(Number);
 
-          const iLog = dLogs.find(l => {
-            const hStr = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(l.timestamp);
-            if (l.isManual) {
-              const [lh, lm] = hStr.split(':').map(Number);
-              const dM = Math.abs((lh * 60 + lm) - (thM * 60 + tmM));
-              const dP = Math.abs((lh * 60 + lm) - (thP * 60 + tmP));
-              return dM <= dP; // Lebih dekat ke jam masuk
-            }
-            return hStr >= (tt.mulaiScanIn || '00:00') && hStr <= (tt.akhirScanIn || '23:59');
-          });
+        iLog = dLogs.find(l => {
+          const hStr = timeFormatter.format(l.timestamp);
+          if (l.isManual) {
+            const [lh, lm] = hStr.split(':').map(Number);
+            const dM = Math.abs((lh * 60 + lm) - (thM * 60 + tmM));
+            const dP = Math.abs((lh * 60 + lm) - (thP * 60 + tmP));
+            return dM <= dP;
+          }
+          return hStr >= (tt.mulaiScanIn || '00:00') && hStr <= (tt.akhirScanIn || '23:59');
+        });
 
-          const targetOut = isO ? logs.filter(l => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(l.timestamp) === new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date(cd.getTime() + 86400000))) : dLogs;
-          const oLog = [...targetOut].reverse().find(l => {
-            const hStr = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(l.timestamp);
-            if (l.isManual) {
-              const [lh, lm] = hStr.split(':').map(Number);
-              const dM = Math.abs((lh * 60 + lm) - (thM * 60 + tmM));
-              const dP = Math.abs((lh * 60 + lm) - (thP * 60 + tmP));
-              return dP < dM; // Lebih dekat ke jam pulang
-            }
-            return hStr >= (tt.mulaiScanOut || '00:00') && hStr <= (tt.akhirScanOut || '23:59');
-          });
+        const targetOut = isO ? logs.filter(l => dateFormatter.format(l.timestamp) === dateFormatter.format(new Date(cd.getTime() + 86400000))) : dLogs;
+        oLog = [...targetOut].reverse().find(l => {
+          const hStr = timeFormatter.format(l.timestamp);
+          if (l.isManual) {
+            const [lh, lm] = hStr.split(':').map(Number);
+            const dM = Math.abs((lh * 60 + lm) - (thM * 60 + tmM));
+            const dP = Math.abs((lh * 60 + lm) - (thP * 60 + tmP));
+            return dP < dM;
+          }
+          return hStr >= (tt.mulaiScanOut || '00:00') && hStr <= (tt.akhirScanOut || '23:59');
+        });
 
-          if (iLog) sIn = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(iLog.timestamp).replace(':', '.');
-          if (oLog) sOut = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(oLog.timestamp).replace(':', '.');
-
+        if (iLog || oLog) {
+          status = 'HADIR';
+          tH++;
+          
+          let isDisciplined = true;
           if (iLog && tt.jamMasuk) {
-            const [hIdx, mIdx] = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(iLog.timestamp).split(':').map(Number);
-            const d = (hIdx * 60 + mIdx) - (thM * 60 + tmM);
-            if (d > 0) late = `${Math.floor(d/60).toString().padStart(2,'0')}:${(d%60).toString().padStart(2,'0')}`;
-          } else if (!iLog && oLog && tt.jamMasuk && pL > 0) {
-            late = `${Math.floor(pL/60).toString().padStart(2,'0')}:${(pL%60).toString().padStart(2,'0')}`;
+            const hStr = timeFormatter.format(iLog.timestamp);
+            const [lh, lm] = hStr.split(':').map(Number);
+            const diff = (lh * 60 + lm) - (thM * 60 + tmM);
+            if (diff > 5) { // Threshold 5 mins from recap
+              lateM = diff;
+              isDisciplined = false;
+            }
+          } else if (!iLog && oLog && pL > 5) {
+             isDisciplined = false; lateM = pL;
           }
 
           if (oLog && tt.jamPulang) {
-            const [hIdx, mIdx] = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(oLog.timestamp).split(':').map(Number);
-            const haP = isO ? thP + 24 : thP; let ah = hIdx; if (isO) ah += 24;
-            const d = (haP * 60 + tmP) - (ah * 60 + mIdx);
-            if (d > 0) early = `${Math.floor(d/60).toString().padStart(2,'0')}:${(d%60).toString().padStart(2,'0')}`;
-          } else if (!oLog && iLog && tt.jamPulang && pE > 0) {
-            early = `${Math.floor(pE/60).toString().padStart(2,'0')}:${(pE%60).toString().padStart(2,'0')}`;
+             const hStr = timeFormatter.format(oLog.timestamp);
+             const [lh, lm] = hStr.split(':').map(Number);
+             const targetH = isO ? thP + 24 : thP;
+             const actualH = isO ? lh + 24 : lh;
+             const diff = (targetH * 60 + tmP) - (actualH * 60 + lm);
+             if (diff > 5) { // Threshold 5 mins from recap
+                earlyM = diff;
+                isDisciplined = false;
+             }
+          } else if (!oLog && iLog && pE > 5) {
+             isDisciplined = false; earlyM = pE;
           }
-        } else if (dLogs.length > 0) {
-          // JIKA TIDAK ADA JADWAL (TT NULL), tapi ada log di hari itu
-          const sorted = [...dLogs].sort((a,b) => a.timestamp.getTime() - b.timestamp.getTime());
-          sIn = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(sorted[0].timestamp).replace(':', '.');
-          if (sorted.length > 1) {
-            sOut = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(sorted[sorted.length-1].timestamp).replace(':', '.');
+
+          if (isDisciplined) {
+             dD++; ttp = rB;
+          } else {
+             nD++; ttp = rL;
           }
         }
-        report.push({ 
-          hari: new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', weekday: 'long' }).format(cd), 
-          tanggal: new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta' }).format(cd), 
-          jamMasuk: tt?.jamMasuk || '', 
-          scanMasuk: sIn, 
-          terlambat: late, 
-          jamPulang: tt?.jamPulang || '', 
-          scanKeluar: sOut, 
-          plgCpt: early
-        });
       }
+
+      days.push({
+        date: dateStr,
+        status,
+        timetable: tt ? { name: tt.name, jamMasuk: tt.jamMasuk, jamPulang: tt.jamPulang } : null,
+        logs: { in: iLog?.timestamp || null, out: oLog?.timestamp || null },
+        lateMinutes: lateM,
+        earlyMinutes: earlyM,
+        ttpValue: ttp
+      });
+
       cd.setDate(cd.getDate() + 1);
     }
-    res.json(report);
-  } catch (error) { res.status(500).json({ error: 'Gagal rincian' }); }
+
+    const bruto = (dD * rB) + (nD * rL);
+    res.json({
+      employee: { id: emp.id, name: emp.name, nip: emp.nip, role: emp.role },
+      days,
+      summary: {
+        totalDays: tH,
+        totalDaysInPeriod: tW,
+        totalAmount: bruto, // Bruto per day sum
+        voucherNominal: vV,
+        netto: Math.max(0, bruto - vV),
+        disciplinedDays: dD,
+        nonDisciplinedDays: nD,
+        rateBruto: rB,
+        rateLate: rL
+      }
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Gagal mengambil laporan detail' });
+  }
 });
 
 app.get('/api/reports/monthly', async (req, res) => {
@@ -840,6 +1190,90 @@ app.get('/api/honor/recap', async (req, res) => {
     });
   }
   res.json(results);
+});
+
+// Endpoint untuk mendapatkan daftar pegawai yang BELUM HADIR (Tidak ada log tap jari padahal ada jadwal)
+app.get('/api/reports/absent', async (req, res) => {
+  const { date } = req.query;
+  try {
+    const targetDate = date ? new Date(String(date)) : new Date();
+    targetDate.setHours(0,0,0,0);
+    
+    const dateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' });
+    const dateStr = dateFormatter.format(targetDate);
+    
+    // 1. Ambil semua pegawai & pola shift-nya
+    const employees = await prisma.employee.findMany({ 
+      include: { 
+        assignedPatterns: { 
+          include: { 
+            pattern: { 
+              include: { 
+                items: { include: { timetable: true } } 
+              } 
+            } 
+          } 
+        } 
+      } 
+    });
+
+    // 2. Ambil log hari ini saja
+    const logs = await prisma.attendance.findMany({
+      where: {
+        timestamp: {
+          gte: new Date(targetDate.getTime()),
+          lte: new Date(targetDate.getTime() + 86400000)
+        }
+      }
+    });
+
+    const presentIds = new Set(logs.map(l => l.employeeId));
+    const absentList = [];
+
+    for (const emp of employees) {
+      // Jika sudah hadir, skip
+      if (presentIds.has(emp.id)) continue;
+
+      // 3. Cek apakah hari ini dia HARUSNYA masuk sesuai shift?
+      let hasShiftToday = false;
+      const ep = emp.assignedPatterns[0];
+
+      if (ep && ep.pattern?.startDate) {
+        const dS = new Date(ep.pattern.startDate); dS.setHours(0,0,0,0);
+        const diff = Math.round((targetDate.getTime() - dS.getTime()) / 86400000);
+        
+        if (diff >= 0) {
+          const dy = (diff % ep.pattern.cycleDays) + 1;
+          const ci = ep.pattern.items.find(i => i.dayNumber === dy);
+          
+          if (ci?.timetable) {
+            // Cek apakah hari ini (Senin-Minggu) aktif di jadwal tersebut
+            let dow = targetDate.getDay(); 
+            if (dow === 0) dow = 7; // Sesuaikan Minggu = 7
+            
+            const validDays = (ci.timetable.days || "1,2,3,4,5,6,7").split(',').map(Number);
+            if (validDays.includes(targetDate.getDay()) || validDays.includes(dow)) {
+              hasShiftToday = true;
+            }
+          }
+        }
+      }
+
+      // Jika punya jadwal tapi tidak ada log hadir
+      if (hasShiftToday) {
+        absentList.push({
+          id: emp.id,
+          name: emp.name,
+          role: emp.role || 'GURU'
+        });
+      }
+    }
+
+    res.json(absentList);
+  } catch (error) {
+    console.error("[Absent Report Error]", error);
+    res.status(500).json({ error: 'Gagal mengambil data belum hadir' });
+  }
 });
 
 // SETTINGS API

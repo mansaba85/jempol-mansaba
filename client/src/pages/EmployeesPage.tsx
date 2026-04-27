@@ -28,7 +28,8 @@ const EmployeesPage = () => {
     name: '', 
     nip: '', 
     role: 'GURU', 
-    transportRate: 0
+    transportRate: 0,
+    pin: ''
   });
 
   const [rosterForm, setRosterForm] = useState({
@@ -72,7 +73,9 @@ const EmployeesPage = () => {
     setIsSyncing(true);
     setSyncProgress({ step: 'Memulai...', percent: 0 });
     
-    const eventSource = new EventSource(`${API_URL}/machine/sync-employees`);
+    const protocol = window.location.protocol;
+    const hostname = window.location.hostname;
+    const eventSource = new EventSource(`${protocol}//${hostname}:3001${API_URL}/machine/sync-employees`);
     
     eventSource.onmessage = (event) => {
       const data = JSON.parse(event.data);
@@ -96,6 +99,7 @@ const EmployeesPage = () => {
   const filteredEmployees = employees.filter(e => 
     e.name.toLowerCase().includes(search.toLowerCase()) || 
     (e.nip && e.nip.includes(search)) ||
+    (e.pin && e.pin.includes(search)) ||
     (String(e.id).includes(search))
   );
   
@@ -226,7 +230,7 @@ const EmployeesPage = () => {
            </button>
 
            <button 
-             onClick={() => { setEditingId(null); setForm({id: '', name:'', nip:'', role:'GURU', transportRate:0}); setIsModalOpen(true); }}
+             onClick={() => { setEditingId(null); setForm({id: '', name:'', nip:'', role:'GURU', transportRate:0, pin: ''}); setIsModalOpen(true); }}
              className="mansaba-btn-primary"
            >
              <i className="fa-solid fa-plus"></i> Tambah Pegawai
@@ -253,7 +257,7 @@ const EmployeesPage = () => {
             <i className="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
             <input 
               className="mansaba-input pl-10" 
-              placeholder="Cari nama atau PIN..." 
+              placeholder="Cari nama, NIP, PIN..." 
               value={search} 
               onChange={e => { setSearch(e.target.value); setCurrentPage(1); }} 
             />
@@ -298,89 +302,95 @@ const EmployeesPage = () => {
             <tbody>
                {loading ? (
                   <tr>
-                     <td colSpan={6} className="py-12 text-center text-slate-500">
-                        <i className="fa-solid fa-spinner fa-spin text-xl text-blue-600 mb-2 block"></i> Memuat data...
-                     </td>
-                  </tr>
-               ) : paginated.length > 0 ? paginated.map((emp) => {
-               const activePattern = emp.assignedPatterns?.[0]?.pattern;
-               const isSelected = selectedIds.includes(emp.id);
-               return (
-                  <tr key={emp.id} className={`tr-hover ${isSelected ? 'bg-blue-50/50' : ''}`}>
-                     <td className="mansaba-td text-center cursor-pointer" onClick={() => toggleSelection(emp.id)}>
-                        <i className={`fa-solid ${isSelected ? 'fa-check-square text-blue-600 text-base' : 'fa-square text-slate-300 text-base shadow-sm hover:text-slate-400'}`}></i>
-                     </td>
-                     <td className="mansaba-td text-center font-medium">#{String(emp.id).padStart(4, '0')}</td>
-                     <td className="mansaba-td">
-                        <div className="flex flex-col">
-                           <span className="text-sm font-semibold text-slate-800">{emp.name}</span>
-                           <span className="text-xs text-slate-500">{emp.nip || 'Tidak ada NIP'}</span>
+                     <td colSpan={6} className="text-center py-10">
+                        <div className="flex flex-col items-center gap-2">
+                           <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                           <span className="text-sm text-slate-500">Memuat data...</span>
                         </div>
                      </td>
-                     <td className="mansaba-td text-center">
-                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${emp.role === 'GURU' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
-                           {emp.role}
-                        </span>
-                     </td>
-                     <td className="mansaba-td">
-                        {activePattern ? (
+                  </tr>
+               ) : paginated.length === 0 ? (
+                  <tr>
+                     <td colSpan={6} className="text-center py-10 text-slate-500">Data pegawai tidak ditemukan</td>
+                  </tr>
+               ) : paginated.map((emp) => (
+                  <tr key={emp.id} className={`hover:bg-slate-50/80 transition-colors ${selectedIds.includes(emp.id) ? 'bg-blue-50/50' : ''}`}>
+                  <td className="mansaba-td text-center" onClick={() => toggleSelection(emp.id)}>
+                     <i className={`fa-solid ${selectedIds.includes(emp.id) ? 'fa-check-square text-blue-600 text-base' : 'fa-square text-slate-300 text-base hover:text-slate-400'} cursor-pointer`}></i>
+                  </td>
+                  <td className="mansaba-td text-center font-bold text-slate-700">{emp.id}</td>
+                  <td className="mansaba-td">
+                     <div className="flex flex-col">
+                        <span className="font-bold text-slate-800">{emp.name}</span>
+                        <span className="text-xs text-slate-500 font-medium">NIP: {emp.nip || '-'} • Portal: {emp.pin ? 'Kunci Aktif' : 'Belum Atur'}</span>
+                     </div>
+                  </td>
+                  <td className="mansaba-td text-center">
+                     <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${emp.role === 'GURU' ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                        {emp.role}
+                     </span>
+                  </td>
+                  <td className="mansaba-td">
+                     <div className="flex items-center gap-2">
+                        {emp.assignedPatterns && emp.assignedPatterns.length > 0 ? (
                            <div className="flex flex-col">
-                             <span className="text-sm font-semibold text-slate-700">{activePattern.name}</span>
-                             <span className="text-[10px] uppercase text-slate-400 mt-0.5 tracking-wider">Mulai: <span className="font-medium">{format(new Date(emp.assignedPatterns[0].startDate), 'dd/MM/yyyy')}</span></span>
+                              <span className="text-sm font-semibold text-slate-700">{emp.assignedPatterns[0].pattern.name}</span>
+                              <span className="text-[10px] text-slate-400 font-medium italic">Mulai: {format(new Date(emp.assignedPatterns[0].startDate), 'dd/MM/yy')}</span>
                            </div>
                         ) : (
-                           <span className="text-xs text-slate-400 italic">Belum diatur</span>
+                           <span className="text-xs text-rose-400 italic font-semibold">Belum dipasang pola</span>
                         )}
-                     </td>
-                     <td className="mansaba-td text-right">
-                        <div className="flex items-center justify-end gap-2 pr-2">
-                           <button 
-                             type="button"
-                             onClick={() => {
-                                setEditingId(emp.id);
-                                setForm({ id: String(emp.id), name: emp.name, nip: emp.nip || '', role: emp.role, transportRate: emp.transportRate || 0 });
-                                setIsModalOpen(true);
-                             }}
-                             className="w-8 h-8 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all flex items-center justify-center border border-transparent hover:border-blue-100"
-                             title="Edit Pegawai"
-                           >
-                              <i className="fa-solid fa-pen-to-square pointer-events-none"></i>
-                           </button>
-                           <button 
-                             type="button"
-                             onClick={() => setDeleteData({ id: emp.id, name: emp.name })}
-                             className="w-8 h-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all flex items-center justify-center border border-transparent hover:border-rose-100"
-                             title="Hapus Pegawai"
-                           >
-                              <i className="fa-solid fa-trash-can pointer-events-none"></i>
-                           </button>
-                        </div>
-                     </td>
-                  </tr>
-               );
-               }) : (
-               <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-500">
-                     Belum ada data pegawai yang terdaftar.
+                     </div>
                   </td>
-               </tr>
-               )}
+                  <td className="mansaba-td text-right">
+                     <div className="flex items-center justify-end gap-1">
+                        <button 
+                          onClick={() => {
+                             setEditingId(emp.id);
+                             setForm({
+                                id: String(emp.id),
+                                name: emp.name,
+                                nip: emp.nip || '',
+                                role: emp.role || 'GURU',
+                                transportRate: emp.transportRate || 0,
+                                pin: emp.pin || ''
+                             });
+                             setIsModalOpen(true);
+                          }}
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all"
+                        >
+                           <i className="fa-solid fa-pen-to-square"></i>
+                        </button>
+                        <button 
+                          onClick={() => setDeleteData({id: emp.id, name: emp.name})}
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all"
+                        >
+                           <i className="fa-solid fa-trash"></i>
+                        </button>
+                     </div>
+                  </td>
+                  </tr>
+               ))}
             </tbody>
          </table>
-
-         {/* PAGINATION */}
-         {totalPages > 1 && (
-            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-between bg-slate-50">
-               <span className="text-sm text-slate-500">
-                  Halaman <span className="font-medium text-slate-800">{currentPage}</span> dari {totalPages}
-               </span>
-               <div className="flex items-center gap-2">
-                  <button disabled={currentPage === 1} onClick={() => setCurrentPage(prev => prev - 1)} className="px-3 py-1 bg-white border border-slate-200 rounded text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50">Sebelumnya</button>
-                  <button disabled={currentPage >= totalPages} onClick={() => setCurrentPage(prev => prev + 1)} className="px-3 py-1 bg-white border border-slate-200 rounded text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50">Selanjutnya</button>
-               </div>
-            </div>
-         )}
       </div>
+
+      {/* PAGINATION */}
+      {itemsPerPage !== 'all' && totalPages > 1 && (
+         <div className="flex items-center justify-center gap-2 mt-4">
+            <button onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} className="w-10 h-10 border border-slate-200 rounded-lg flex items-center justify-center hover:bg-slate-50 transition-all"><i className="fa-solid fa-chevron-left"></i></button>
+            {Array.from({ length: totalPages }).map((_, i) => (
+               <button 
+                  key={i} 
+                  onClick={() => setCurrentPage(i + 1)}
+                  className={`w-10 h-10 rounded-lg font-bold text-sm transition-all ${currentPage === i + 1 ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+               >
+                  {i + 1}
+               </button>
+            ))}
+            <button onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} className="w-10 h-10 border border-slate-200 rounded-lg flex items-center justify-center hover:bg-slate-50 transition-all"><i className="fa-solid fa-chevron-right"></i></button>
+         </div>
+      )}
 
       {/* MODAL PLOTTING MASSAL */}
       {isBulkModalOpen && (
@@ -479,53 +489,71 @@ const EmployeesPage = () => {
                     <div className="space-y-2">
                         <label className="text-sm font-semibold text-slate-700">Jabatan <span className="text-rose-500">*</span></label>
                         <select className="mansaba-input" value={form.role} onChange={e => setForm({...form, role: e.target.value})}>
-                           <option value="GURU">Guru</option>
-                           <option value="STAF">Staf / Karyawan</option>
+                           <option value="GURU">GURU</option>
+                           <option value="STAFF">STAFF</option>
+                           <option value="SECURITY">SECURITY</option>
+                           <option value="CLEANING">CLEANING</option>
                         </select>
+                    </div>
+                    <div className="space-y-2">
+                        <label className="text-sm font-semibold text-slate-700">Portal PIN (6 Digit)</label>
+                        <input 
+                           type="text" 
+                           className="mansaba-input" 
+                           maxLength={6} 
+                           value={form.pin} 
+                           onChange={e => setForm({...form, pin: e.target.value})} 
+                           placeholder="Untuk akses mandiri" 
+                        />
                     </div>
                  </div>
 
-                 <div className="pt-6 border-t border-slate-100 flex justify-end gap-3 mt-8">
-                    <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 rounded-lg text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">Batal</button>
-                    <button type="submit" className="mansaba-btn-primary px-8 py-2.5">Simpan Data</button>
+                 <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700">Tunjangan Transport (TTP) per Hari</label>
+                    <div className="relative">
+                       <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">Rp</span>
+                       <input 
+                          type="number" 
+                          className="mansaba-input pl-12" 
+                          value={form.transportRate} 
+                          onChange={e => setForm({...form, transportRate: parseInt(e.target.value) || 0})} 
+                          placeholder="Contoh: 25000" 
+                       />
+                    </div>
+                    <p className="text-[10px] text-slate-400 italic">Kosongkan/set 0 untuk menggunakan tarif default sistem.</p>
+                 </div>
+
+                 <div className="pt-4 flex justify-end gap-3 border-t border-slate-100 mt-4">
+                    <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 rounded-lg text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200">Batal</button>
+                    <button type="submit" className="mansaba-btn-primary px-8 cursor-pointer">
+                       {editingId ? 'Simpan Perubahan' : 'Daftarkan Pegawai'}
+                    </button>
                  </div>
               </form>
            </div>
         </div>
       )}
 
-      {/* CUSTOM DELETE CONFIRMATION MODAL */}
+      {/* CONFIRM DELETE MODAL */}
       {(deleteData || bulkDeleteActive) && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
-           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 text-center transform transition-all scale-100 animate-in fade-in zoom-in duration-200">
-              <div className="w-20 h-20 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-6">
-                 <i className="fa-solid fa-trash-can text-3xl"></i>
-              </div>
-              
-              <h3 className="text-2xl font-bold text-slate-800 mb-2">Konfirmasi Hapus</h3>
-              <p className="text-slate-500 mb-8 px-4">
-                 {bulkDeleteActive 
-                   ? `Anda yakin ingin menghapus ${selectedIds.length} pegawai yang dipilih? Tindakan ini tidak dapat dibatalkan.`
-                   : `Apakah Anda yakin ingin menghapus pegawai ${deleteData?.name}? Seluruh riwayat presensi akan ikut terhapus.`
-                 }
-              </p>
-
-              <div className="flex flex-col gap-3">
-                 <button 
-                   onClick={confirmDelete}
-                   className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl transition-colors shadow-lg shadow-rose-200"
-                 >
-                   Ya, Hapus Sekarang
-                 </button>
-                 <button 
-                   onClick={() => { setDeleteData(null); setBulkDeleteActive(false); }}
-                   className="w-full py-3 bg-white border border-slate-200 text-slate-600 font-semibold rounded-xl hover:bg-slate-50 transition-colors"
-                 >
-                   Batalkan
-                 </button>
-              </div>
-           </div>
-        </div>
+         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8 text-center">
+               <div className="w-16 h-16 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <i className="fa-solid fa-triangle-exclamation text-2xl"></i>
+               </div>
+               <h3 className="text-xl font-bold text-slate-800 mb-2">Konfirmasi Hapus</h3>
+               <p className="text-slate-500 mb-8">
+                  {bulkDeleteActive 
+                    ? `Apakah Anda yakin ingin menghapus ${selectedIds.length} pegawai terpilih secara permanen? Data presensi dan honor juga akan hilang.` 
+                    : `Hapus data "${deleteData?.name}" secara permanen? Tindakan ini tidak dapat dibatalkan.`
+                  }
+               </p>
+               <div className="flex gap-3">
+                  <button onClick={() => { setDeleteData(null); setBulkDeleteActive(false); }} className="flex-1 py-3 rounded-xl bg-slate-100 font-bold text-slate-600 hover:bg-slate-200 transition-all">Batal</button>
+                  <button onClick={confirmDelete} className="flex-1 py-3 rounded-xl bg-rose-600 font-bold text-white hover:bg-rose-700 shadow-lg shadow-rose-600/20 transition-all">Ya, Hapus!</button>
+               </div>
+            </div>
+         </div>
       )}
     </div>
   );

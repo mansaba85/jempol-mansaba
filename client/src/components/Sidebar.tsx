@@ -1,5 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
+import { useSettings } from '../context/SettingsContext';
+import { useAuth } from '../context/AuthContext';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -7,7 +9,10 @@ interface SidebarProps {
 }
 
 const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
-  const menuGroups = [
+  const { settings } = useSettings();
+  const { user, logout } = useAuth();
+  
+  const adminGroups = [
     {
       title: 'Utama',
       items: [
@@ -31,6 +36,7 @@ const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
       title: 'Laporan',
       items: [
         { path: '/attendance', label: 'Log Presensi', icon: 'fa-solid fa-clipboard-check' },
+        { path: '/reports/absent', label: 'Belum Hadir', icon: 'fa-solid fa-user-xmark' },
         { path: '/reports', label: 'Laporan Detil', icon: 'fa-solid fa-file-invoice' },
         { path: '/recap', label: 'Rekap Absensi', icon: 'fa-solid fa-chart-line' },
         { path: '/honor', label: 'Honor Transport', icon: 'fa-solid fa-money-check-dollar' },
@@ -40,15 +46,35 @@ const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
       title: 'Sistem',
       items: [
         { path: '/devices', label: 'Terminal Mesin', icon: 'fa-solid fa-microchip' },
-        { path: '/connection', label: 'Sinkronisasi', icon: 'fa-solid fa-arrows-rotate' },
         { path: '/settings', label: 'Pengaturan', icon: 'fa-solid fa-gears' },
       ]
     }
   ];
 
+  const employeeGroups = [
+    {
+      title: 'Menu Mandiri',
+      items: [
+        { path: '/', label: 'Dashboard', icon: 'fa-solid fa-house-chimney' },
+        { path: '/history', label: 'Riwayat Presensi', icon: 'fa-solid fa-history' },
+      ]
+    }
+  ];
+
+  const menuGroups = user?.role === 'ADMIN' ? adminGroups : employeeGroups;
+
   return (
-    <aside className={`
-      fixed inset-y-0 left-0 z-[60] xl:static
+    <>
+      {/* OVERLAY BACKDROP (Auto-hide on click outside) */}
+      {isOpen && (
+        <div 
+          className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[55] xl:hidden transition-opacity duration-300"
+          onClick={onClose}
+        />
+      )}
+
+      <aside className={`
+        fixed inset-y-0 left-0 z-[60] xl:sticky xl:top-0
       ${isOpen ? 'translate-x-0' : '-translate-x-full xl:translate-x-0'}
       w-[250px] flex flex-col h-screen bg-white shadow border-r border-slate-200 transition-all duration-300 ease-in-out
     `}>
@@ -60,8 +86,8 @@ const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
             <i className="fa-solid fa-fingerprint text-lg"></i>
           </div>
           <div>
-            <span className="text-lg font-bold text-slate-800 leading-none block">Jariku Mansaba</span>
-            <span className="text-xs text-slate-500 leading-none">Absensi</span>
+            <span className="text-lg font-bold text-slate-800 leading-none block">{settings.app_name}</span>
+            <span className="text-xs text-slate-500 leading-none">{user?.role === 'ADMIN' ? 'Admin Panel' : 'Portal Pegawai'}</span>
           </div>
         </NavLink>
       </div>
@@ -94,7 +120,25 @@ const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
           </div>
         ))}
       </nav>
+
+      {/* ACCESS CONTROL */}
+      <div className="p-4 border-t border-slate-100 bg-slate-50/50">
+        <div className="mb-4 px-3">
+           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">User Aktif</p>
+           <p className="text-xs font-bold text-slate-700 truncate">{user?.username}</p>
+        </div>
+        <button 
+          onClick={logout}
+          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors font-semibold text-sm"
+        >
+          <div className="w-5 flex justify-center">
+            <i className="fa-solid fa-right-from-bracket"></i>
+          </div>
+          <span>Logout Portal</span>
+        </button>
+      </div>
     </aside>
+    </>
   );
 };
 
