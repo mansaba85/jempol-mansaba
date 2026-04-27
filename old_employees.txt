@@ -1,0 +1,560 @@
+﻿import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { format } from 'date-fns';
+import { 
+  Plus, 
+  Trash2, 
+  Search, 
+  UserPlus, 
+  Calendar, 
+  ChevronLeft,
+  ChevronRight,
+  ShieldCheck,
+  Edit2,
+  CheckSquare,
+  Square,
+  Layers,
+  ArrowUpDown,
+  X as CloseIcon
+} from 'lucide-react';
+import toast, { Toaster } from 'react-hot-toast';
+
+const API_URL = '/api';
+
+const EmployeesPage = () => {
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [patterns, setPatterns] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  const [search, setSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState<number | 'all'>(10);
+  const [sortField, setSortField] = useState('id');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isRosterModalOpen, setIsRosterModalOpen] = useState(false);
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+  
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [selectedEmployee, setSelectedEmployee] = useState<any>(null);
+
+  const [form, setForm] = useState({ 
+    id: '', 
+    name: '', 
+    nip: '', 
+    role: 'GURU', 
+    transportRate: 0
+  });
+
+  const [rosterForm, setRosterForm] = useState({
+    patternId: '',
+    startDate: format(new Date(), 'yyyy-MM-dd')
+  });
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const [empRes, patRes, catRes] = await Promise.all([
+        axios.get(`${API_URL}/employees`),
+        axios.get(`${API_URL}/patterns`),
+        axios.get(`${API_URL}/categories`)
+      ]);
+      setEmployees(empRes.data);
+      setPatterns(patRes.data);
+      setCategories(catRes.data);
+    } catch (err) {
+      toast.error('Gagal memuat data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
+    }
+  };
+
+  const filteredEmployees = employees.filter(e => 
+    e.name.toLowerCase().includes(search.toLowerCase()) || 
+    (e.nip && e.nip.includes(search)) ||
+    (String(e.id).includes(search))
+  );
+
+  const sortedEmployees = [...filteredEmployees].sort((a, b) => {
+    let valA = a[sortField];
+    let valB = b[sortField];
+    
+    // Handle specific fields if needed
+    if (sortField === 'id') {
+      valA = parseInt(valA);
+      valB = parseInt(valB);
+    } else {
+      valA = String(valA || '').toLowerCase();
+      valB = String(valB || '').toLowerCase();
+    }
+
+    if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+    if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const toggleSelection = (id: number) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+
+  const toggleAll = () => {
+    if (selectedIds.length === filteredEmployees.length) setSelectedIds([]);
+    else setSelectedIds(filteredEmployees.map(e => e.id));
+  };
+
+  const handleEdit = (emp: any) => {
+    setEditingId(emp.id);
+    setForm({
+      id: String(emp.id),
+      name: emp.name || '',
+      nip: emp.nip || '',
+      role: emp.role || 'GURU',
+      transportRate: emp.transportRate || 0
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleOpenRoster = (emp: any) => {
+    setSelectedEmployee(emp);
+    const existing = emp.assignedPatterns?.[0];
+    setRosterForm({
+      patternId: existing?.patternId || '',
+      startDate: existing?.startDate ? format(new Date(existing.startDate), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd')
+    });
+    setIsRosterModalOpen(true);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (editingId) {
+        await axios.put(`${API_URL}/employees/${editingId}`, form);
+        toast.success('Data pegawai diperbarui');
+      } else {
+        await axios.post(`${API_URL}/employees`, form);
+        toast.success('Pegawai berhasil didaftarkan');
+      }
+      setIsModalOpen(false);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Gagal menyimpan');
+    }
+  };
+
+  const handleAssignRoster = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEmployee) return;
+    try {
+      await axios.post(`${API_URL}/employees/patterns`, {
+        employeeId: selectedEmployee.id,
+        patternId: parseInt(rosterForm.patternId),
+        startDate: rosterForm.startDate
+      });
+      toast.success('Plotting Shift berhasil');
+      setIsRosterModalOpen(false);
+      fetchData();
+    } catch (err) {
+      toast.error('Gagal memasang shift');
+    }
+  };
+
+  const handleBulkAssign = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedIds.length === 0) return;
+    try {
+      await axios.post(`${API_URL}/employees/bulk-pattern`, {
+        employeeIds: selectedIds,
+        patternId: parseInt(rosterForm.patternId),
+        startDate: rosterForm.startDate
+      });
+      toast.success(`${selectedIds.length} pegawai berhasil di-plot`);
+      setIsBulkModalOpen(false);
+      setSelectedIds([]);
+      fetchData();
+    } catch (err) {
+      toast.error('Gagal memproses plotting massal');
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!window.confirm('Hapus pegawai ini?')) return;
+    try {
+      await axios.delete(`${API_URL}/employees/${id}`);
+      toast.success('Data dihapus');
+      fetchData();
+    } catch (err) {
+      toast.error('Gagal menghapus');
+    }
+  };
+
+  const currentItemsPerPage = itemsPerPage === 'all' ? sortedEmployees.length : itemsPerPage;
+  const paginated = sortedEmployees.slice((currentPage - 1) * currentItemsPerPage, currentPage * currentItemsPerPage);
+  const totalPages = itemsPerPage === 'all' ? 1 : Math.ceil(sortedEmployees.length / itemsPerPage);
+
+  return (
+    <div className="animate-in fade-in duration-700 h-full flex flex-col">
+      <Toaster position="top-right" />
+      
+      <header className="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-slate-100">
+        <div>
+          <h2 className="text-3xl font-bold text-slate-800 tracking-tight">Manajemen Pegawai</h2>
+          <p className="text-xs font-medium text-slate-400 uppercase tracking-widest mt-2">Daftar Biometrik & Penugasan Shift</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-4">
+           {selectedIds.length > 0 && (
+             <div className="flex items-center gap-3 bg-primary/5 p-1.5 rounded-2xl border border-primary/20 animate-in slide-in-from-right duration-500">
+                <span className="text-[10px] font-black text-primary px-4">{selectedIds.length} Dipilih</span>
+                <button 
+                  onClick={() => {
+                    setRosterForm({patternId: '', startDate: format(new Date(), 'yyyy-MM-dd')});
+                    setIsBulkModalOpen(true);
+                  }}
+                  className="bg-primary text-white px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-primary/20 transition-all hover:bg-primary-light"
+                >
+                  Plotting Massal
+                </button>
+             </div>
+           )}
+           <div className="relative group">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-primary transition-colors" size={18} />
+              <input className="input-mansaba pl-12 w-64 !py-3.5" placeholder="Cari nama / PIN..." value={search} onChange={e => { setSearch(e.target.value); setCurrentPage(1); }} />
+           </div>
+           <button onClick={() => { setEditingId(null); setForm({id: '', name:'', nip:'', role:'GURU', transportRate:0}); setIsModalOpen(true); }} className="btn-mansaba px-8 py-3.5 !rounded-2xl shadow-xl shadow-primary/20">
+             <UserPlus size={18} /> Tambah
+           </button>
+        </div>
+      </header>
+
+      <div className="table-wrapper border border-slate-200/50 shadow-premium flex-1 overflow-hidden flex flex-col">
+        <div className="flex-1 overflow-y-auto no-scrollbar">
+          <table className="table-mansaba !mb-0">
+            <thead className="sticky top-0 z-10">
+              <tr>
+                <th className="table-header w-14 text-center">
+                   <button onClick={toggleAll} className="p-1 hover:text-primary transition-colors">
+                      {selectedIds.length === filteredEmployees.length && filteredEmployees.length > 0 ? <CheckSquare size={16} /> : <Square size={16} />}
+                   </button>
+                </th>
+                <th className="table-header w-14 text-center">#</th>
+                <th className="table-header w-24 cursor-pointer hover:bg-slate-50 transition-colors" onClick={() => handleSort('id')}>
+                   <div className="flex items-center gap-2">ID <ArrowUpDown size={12} className={sortField === 'id' ? 'text-primary' : 'text-slate-300'} /></div>
+                </th>
+                <th className="table-header cursor-pointer hover:bg-slate-50 transition-colors" onClick={() => handleSort('name')}>
+                   <div className="flex items-center gap-2">NAMA <ArrowUpDown size={12} className={sortField === 'name' ? 'text-primary' : 'text-slate-300'} /></div>
+                </th>
+                <th className="table-header w-32 cursor-pointer hover:bg-slate-50 transition-colors" onClick={() => handleSort('role')}>
+                   <div className="flex items-center gap-2">KATEGORI <ArrowUpDown size={12} className={sortField === 'role' ? 'text-primary' : 'text-slate-300'} /></div>
+                </th>
+                <th className="table-header">SHIFT AKTIF</th>
+                <th className="table-header text-right">AKSI</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginated.map((emp, idx) => {
+                const activePattern = emp.assignedPatterns?.[0]?.pattern;
+                const isSelected = selectedIds.includes(emp.id);
+                const rowNumber = (currentPage - 1) * currentItemsPerPage + idx + 1;
+                return (
+                  <tr key={emp.id} className={`table-row group ${isSelected ? 'bg-primary/5' : ''}`} onClick={() => toggleSelection(emp.id)}>
+                    <td className="table-cell text-center" onClick={e => e.stopPropagation()}>
+                      <button onClick={() => toggleSelection(emp.id)} className={`transition-colors ${isSelected ? 'text-primary' : 'text-slate-200 hover:text-slate-400'}`}>
+                         {isSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+                      </button>
+                    </td>
+                    <td className="table-cell text-center text-slate-400 font-bold text-[10px]">{rowNumber}</td>
+                    <td className="table-cell text-center font-mono font-bold text-slate-500 text-xs">#{String(emp.id).padStart(4, '0')}</td>
+                    <td className="table-cell">
+                      <div className="flex flex-col">
+                        <span className="font-bold text-slate-700 text-sm tracking-tight">{emp.name}</span>
+                        <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{emp.nip || 'TANPA NIP'}</span>
+                      </div>
+                    </td>
+                    <td className="table-cell">
+                      <span className="px-3 py-1 bg-surface-100 text-slate-500 rounded-lg text-[9px] font-bold uppercase border border-slate-200/50">
+                        {emp.role}
+                      </span>
+                    </td>
+                    <td className="table-cell" onClick={e => e.stopPropagation()}>
+                    {activePattern ? (
+                      <div className="flex items-center gap-3">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"></div>
+                        <div className="flex flex-col">
+                           <span className="text-xs font-bold text-slate-700">{activePattern.name}</span>
+                           <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Mulai: {format(new Date(emp.assignedPatterns[0].startDate), 'dd/MM/yyyy')}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <button onClick={() => handleOpenRoster(emp)} className="text-[10px] font-bold text-rose-400 hover:text-rose-600 transition-colors uppercase tracking-widest flex items-center gap-1.5">
+                         <Calendar size={10} /> Belum di-Plot
+                      </button>
+                    )}
+                    </td>
+                    <td className="table-cell text-right" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => handleOpenRoster(emp)} className="p-2 bg-white text-slate-400 hover:text-primary hover:bg-primary/5 rounded-xl border border-slate-100 shadow-sm" title="Plotting Shift">
+                          <Calendar size={16} />
+                        </button>
+                        <button onClick={() => handleEdit(emp)} className="p-2 bg-white text-slate-400 hover:text-primary hover:bg-primary/5 rounded-xl border border-slate-100 shadow-sm">
+                          <Edit2 size={16} />
+                        </button>
+                        <button onClick={() => handleDelete(emp.id)} className="p-2 bg-white text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl border border-slate-100 shadow-sm">
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        
+        {/* FOOTER: PAGINATION & ITEMS PER PAGE */}
+        <div className="p-6 bg-slate-50/50 border-t border-slate-100 flex flex-col md:flex-row items-center justify-between gap-6">
+           <div className="flex items-center gap-6">
+              <div className="flex items-center gap-3">
+                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tampilkan:</span>
+                 <select 
+                   value={itemsPerPage} 
+                   onChange={e => {
+                     const val = e.target.value === 'all' ? 'all' : parseInt(e.target.value);
+                     setItemsPerPage(val as any);
+                     setCurrentPage(1);
+                   }}
+                   className="bg-white border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 px-2 py-1 outline-none focus:border-primary transition-all"
+                 >
+                   <option value={10}>10 Baris</option>
+                   <option value={25}>25 Baris</option>
+                   <option value={50}>50 Baris</option>
+                   <option value="all">Semua</option>
+                 </select>
+              </div>
+              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                 Total: <span className="text-slate-800">{filteredEmployees.length}</span> Pegawai
+              </div>
+           </div>
+
+           <div className="flex items-center gap-4">
+              <button disabled={currentPage === 1} onClick={() => setCurrentPage(prev => prev - 1)} className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-400 hover:bg-slate-50 disabled:opacity-30 transition-all shadow-sm">
+                 <ChevronLeft size={16} />
+              </button>
+              <div className="flex items-center gap-1.5">
+                 {itemsPerPage !== 'all' && totalPages > 1 && [...Array(Math.min(5, totalPages))].map((_, i) => {
+                    let pageNum = i + 1;
+                    if (totalPages > 5 && currentPage > 3) pageNum = currentPage - 3 + i + 1;
+                    if (pageNum > totalPages) return null;
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`w-9 h-9 rounded-xl text-[11px] font-black transition-all ${currentPage === pageNum ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-white border border-slate-200 text-slate-400 hover:border-slate-300'}`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                 })}
+                 {itemsPerPage === 'all' && <span className="text-[10px] font-black text-primary uppercase">Menampilkan Semua Data</span>}
+              </div>
+              <button disabled={itemsPerPage === 'all' || currentPage === totalPages} onClick={() => setCurrentPage(prev => prev + 1)} className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-400 hover:bg-slate-50 disabled:opacity-30 transition-all shadow-sm">
+                 <ChevronRight size={16} />
+              </button>
+           </div>
+        </div>
+      </div>
+
+      {/* MODAL PLOTTING MASSAL */}
+      {isBulkModalOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-xl animate-in fade-in duration-300">
+           <div className="bg-white rounded-[3rem] p-12 w-full max-w-xl shadow-2xl relative border border-white/20">
+              <button onClick={() => setIsBulkModalOpen(false)} className="absolute top-8 right-8 p-2 text-slate-400 hover:text-slate-600">
+                 <CloseIcon size={20} />
+              </button>
+              
+              <div className="flex items-center gap-5 mb-8 pb-8 border-b border-slate-50">
+                 <div className="w-16 h-16 rounded-[2rem] bg-primary text-white flex items-center justify-center shadow-xl shadow-primary/30">
+                    <Layers size={32} />
+                 </div>
+                 <div>
+                    <h3 className="text-2xl font-black text-slate-800 tracking-tight leading-none mb-2">Plotting Massal</h3>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Memasang jadwal untuk <span className="text-primary font-black ml-1">{selectedIds.length} Pegawai Terpilih</span></p>
+                 </div>
+              </div>
+
+              <form onSubmit={handleBulkAssign} className="space-y-10">
+                 <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-4 ml-1">Pilih Pola Shift Kerja</label>
+                    <div className="grid grid-cols-1 gap-3 max-h-60 overflow-y-auto pr-2 no-scrollbar">
+                       {patterns.map(p => (
+                          <label key={p.id} className={`flex items-center justify-between p-5 rounded-[2rem] border-2 transition-all cursor-pointer ${rosterForm.patternId === String(p.id) ? 'bg-primary/5 border-primary text-primary' : 'bg-surface-50 border-slate-100 text-slate-400 hover:border-slate-200'}`}>
+                             <div className="flex items-center gap-4">
+                                <input 
+                                  type="radio" 
+                                  className="w-5 h-5 text-primary border-slate-300 focus:ring-primary" 
+                                  checked={rosterForm.patternId === String(p.id)} 
+                                  onChange={() => setRosterForm({
+                                    patternId: String(p.id),
+                                    startDate: p.startDate ? format(new Date(p.startDate), 'yyyy-MM-dd') : rosterForm.startDate
+                                  })} 
+                                />
+                                <div className="flex flex-col">
+                                   <span className="text-sm font-black uppercase tracking-tight mb-0.5">{p.name}</span>
+                                   <span className="text-[10px] font-bold opacity-60">Siklus {p.cycleDays} Hari</span>
+                                </div>
+                             </div>
+                             <span className="text-[9px] font-black uppercase px-3 py-1 bg-white/50 rounded-lg border border-slate-100">{p.category}</span>
+                          </label>
+                       ))}
+                    </div>
+                 </div>
+
+                 <div className="bg-surface-50 p-6 rounded-[2.5rem] border border-slate-100 flex items-center justify-between">
+                    <div>
+                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Tanggal Mulai Berlaku</p>
+                       <p className="text-[11px] font-bold text-slate-500 italic leading-none">Berlaku untuk semua pegawai terpilih</p>
+                    </div>
+                    <input type="date" className="bg-transparent text-sm font-black text-primary p-2 focus:outline-none border-b-2 border-primary/20" value={rosterForm.startDate} onChange={e => setRosterForm({...rosterForm, startDate: e.target.value})} required />
+                 </div>
+
+                 <div className="pt-6">
+                    <button type="submit" className="btn-mansaba w-full !py-5 shadow-2xl shadow-primary/30 font-black uppercase tracking-[0.3em]" disabled={!rosterForm.patternId}>
+                       Pasang Jadwal ke {selectedIds.length} Orang
+                    </button>
+                 </div>
+              </form>
+           </div>
+        </div>
+      )}
+
+      {/* MODAL EDIT PROFIL */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-md animate-in fade-in duration-300">
+           <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-xl shadow-2xl relative border border-slate-100">
+              <button onClick={() => setIsModalOpen(false)} className="absolute top-8 right-8 p-2 text-slate-400 hover:text-slate-600">
+                 <CloseIcon size={20} />
+              </button>
+              <h3 className="text-2xl font-bold text-slate-800 mb-2 tracking-tight">{editingId ? 'Edit Profil Pegawai' : 'Registrasi Pegawai Baru'}</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-10 border-b border-slate-50 pb-6">Identitas Biometrik & Jabatan</p>
+              
+              <form onSubmit={handleSubmit} className="space-y-6">
+                 <div className="grid grid-cols-2 gap-6">
+                    <div>
+                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 px-1">ID PIN Mesin</label>
+                       <input className="input-mansaba w-full font-mono text-center tracking-widest" value={form.id} onChange={e => setForm({...form, id: e.target.value})} placeholder="Contoh: 1001" required disabled={!!editingId} />
+                    </div>
+                    <div>
+                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 px-1">NIP (Nomor Induk)</label>
+                       <input className="input-mansaba w-full" value={form.nip} onChange={e => setForm({...form, nip: e.target.value})} placeholder="X.XXXX.XXX" />
+                    </div>
+                 </div>
+
+                 <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 px-1">Nama Lengkap & Gelar</label>
+                    <input className="input-mansaba w-full !py-4 font-bold" value={form.name} onChange={e => setForm({...form, name: e.target.value})} required />
+                 </div>
+
+                 <div className="grid grid-cols-2 gap-6">
+                    <div>
+                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 px-1">Kategori Peran</label>
+                       <select className="input-mansaba w-full appearance-none" value={form.role} onChange={e => setForm({...form, role: e.target.value})}>
+                          <option value="GURU">GURU</option>
+                          <option value="STAF">STAF</option>
+                          <option value="PENJAGA">PENJAGA</option>
+                          <option value="KEBERSIHAN">KEBERSIHAN</option>
+                       </select>
+                    </div>
+                    <div>
+                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 px-1">Tarif Transport/Hari</label>
+                       <input type="number" className="input-mansaba w-full" value={form.transportRate} onChange={e => setForm({...form, transportRate: parseInt(e.target.value)})} />
+                    </div>
+                 </div>
+
+                 <div className="pt-4">
+                    <button type="submit" className="btn-mansaba w-full !py-4 shadow-2xl shadow-primary/30 font-black uppercase tracking-[0.2em]">Simpan Data Pegawai</button>
+                 </div>
+              </form>
+           </div>
+        </div>
+      )}
+
+      {isRosterModalOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-lg animate-in fade-in duration-300">
+           <div className="bg-white rounded-[3rem] p-12 w-full max-w-xl shadow-2xl relative border border-white/20">
+              <button onClick={() => setIsRosterModalOpen(false)} className="absolute top-8 right-8 p-2 text-slate-400 hover:text-slate-600">
+                 <CloseIcon size={20} />
+              </button>
+              
+              <div className="flex items-center gap-5 mb-8 pb-8 border-b border-slate-50">
+                 <div className="w-16 h-16 rounded-[2rem] bg-primary/5 flex items-center justify-center text-primary border border-primary/10 shadow-sm">
+                    <ShieldCheck size={32} />
+                 </div>
+                 <div>
+                    <h3 className="text-2xl font-black text-slate-800 tracking-tight leading-none mb-2">Plotting Shift</h3>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Penugasan Jadwal untuk: <span className="text-primary font-black ml-1">{selectedEmployee?.name}</span></p>
+                 </div>
+              </div>
+
+              <form onSubmit={handleAssignRoster} className="space-y-10">
+                 <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-4 ml-1">Pilih Pola Shift Kerja</label>
+                    <div className="grid grid-cols-1 gap-3 max-h-60 overflow-y-auto pr-2 no-scrollbar">
+                       {patterns.map(p => (
+                          <label key={p.id} className={`flex items-center justify-between p-5 rounded-[2rem] border-2 transition-all cursor-pointer ${rosterForm.patternId === String(p.id) ? 'bg-primary/5 border-primary text-primary' : 'bg-surface-50 border-slate-100 text-slate-400 hover:border-slate-200'}`}>
+                             <div className="flex items-center gap-4">
+                                <input 
+                                  type="radio" 
+                                  className="w-5 h-5 text-primary border-slate-300 focus:ring-primary" 
+                                  checked={rosterForm.patternId === String(p.id)} 
+                                  onChange={() => setRosterForm({
+                                    patternId: String(p.id),
+                                    startDate: p.startDate ? format(new Date(p.startDate), 'yyyy-MM-dd') : rosterForm.startDate
+                                  })} 
+                                />
+                                <div className="flex flex-col">
+                                   <span className="text-sm font-black uppercase tracking-tight mb-0.5">{p.name}</span>
+                                   <span className="text-[10px] font-bold opacity-60">Siklus {p.cycleDays} Hari</span>
+                                </div>
+                             </div>
+                             <span className="text-[9px] font-black uppercase px-3 py-1 bg-white/50 rounded-lg border border-slate-100">{p.category}</span>
+                          </label>
+                       ))}
+                    </div>
+                 </div>
+
+                 <div className="bg-surface-50 p-6 rounded-[2.5rem] border border-slate-100 flex items-center justify-between">
+                    <div>
+                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Tanggal Mulai Berlaku</p>
+                       <p className="text-[11px] font-bold text-slate-500 italic leading-none">Mulai Mengikuti Siklus Hari Ke-1</p>
+                    </div>
+                    <input type="date" className="bg-transparent text-sm font-black text-primary p-2 focus:outline-none border-b-2 border-primary/20" value={rosterForm.startDate} onChange={e => setRosterForm({...rosterForm, startDate: e.target.value})} required />
+                 </div>
+
+                 <div className="pt-6">
+                    <button type="submit" className="btn-mansaba w-full !py-5 shadow-2xl shadow-primary/30 font-black uppercase tracking-[0.3em]" disabled={!rosterForm.patternId}>
+                       Pasang Pola Jadwal
+                    </button>
+                 </div>
+              </form>
+           </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default EmployeesPage;

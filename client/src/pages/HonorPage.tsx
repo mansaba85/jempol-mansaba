@@ -101,7 +101,7 @@ const HonorPage = () => {
           .judul h1 { font-size: 12px; font-weight: bold; text-decoration: underline; margin: 0 0 3px 0; }
           .judul h2 { font-size: 10px; font-weight: bold; margin: 0; }
           table { width: 100%; border-collapse: collapse; }
-          th, td { border: 1px solid black; padding: 6px; font-size: 10px; }
+          th, td { border: 1px solid black; padding: 4px 6px; font-size: 10px; }
           th { font-weight: bold; text-align: center; }
           .text-center { text-align: center; }
           .text-left { text-align: left; }
@@ -149,8 +149,8 @@ const HonorPage = () => {
                       <td class="text-center">${h.nonDisciplinedDays}</td>
                       <td class="text-right">${h.voucherNominal.toLocaleString('id-ID')}</td>
                       <td class="text-right font-bold">${h.netto.toLocaleString('id-ID')}</td>
-                      <td style="position: relative; height: 30px;">
-                          <span style="position: absolute; ${i % 2 !== 0 ? 'left: 60px;' : 'left: 10px;'} top: 12px;">${i+1}. ..............................</span>
+                      <td style="position: relative; height: 25px;">
+                          <span style="position: absolute; left: 10px; top: 12px;">${i+1}. ..............................</span>
                       </td>
                    </tr>
                 `).join('')}
@@ -180,6 +180,96 @@ const HonorPage = () => {
           <script>
             window.onload = function() { window.print(); };
           </script>
+      </body>
+      </html>
+    `;
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+  const handlePrintSlips = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const html = `
+      <html>
+      <head>
+        <title>Cetak Struk Honor - ${selectedMonth}/${selectedYear}</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+        <style>
+          @page { size: 215.9mm 330.2mm; margin: 10mm; }
+          body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; background: #fff; }
+          .grid-container { 
+            display: grid; 
+            grid-template-columns: repeat(3, 1fr); 
+            gap: 5px;
+            row-gap: 15px; 
+          }
+          .slip { 
+            width: 65mm; 
+            height: 48mm; 
+            border: 0.5px solid #ddd; 
+            padding: 8px;
+            box-sizing: border-box;
+            font-size: 8px;
+            position: relative;
+            overflow: hidden;
+          }
+          .header { text-align: center; border-bottom: 1.5px solid #000; margin-bottom: 5px; padding-bottom: 2px; }
+          .header h1 { font-size: 9px; margin: 0; font-weight: 800; }
+          .header p { font-size: 7px; margin: 0; font-weight: 600; text-transform: uppercase; }
+          .emp-info { margin-bottom: 4px; }
+          .emp-name { font-size: 9px; font-weight: 800; margin: 0; text-transform: uppercase; }
+          .emp-sub { font-size: 7px; color: #444; }
+          .row { display: flex; justify-content: space-between; margin-bottom: 1px; }
+          .label { font-weight: 500; }
+          .val { text-align: right; font-weight: 600; }
+          .voucher { color: #d97706; font-style: italic; }
+          .total-box { 
+            border-top: 1px dashed #000; 
+            margin-top: 5px; 
+            padding-top: 3px; 
+            display: flex; 
+            justify-content: flex-end; 
+            align-items: center; 
+            gap: 5px;
+          }
+          .total-label { font-weight: 800; font-size: 9px; }
+          .total-val { font-size: 10px; font-weight: 900; }
+          @media print { .slip { border: 0.5px solid #ccc; } }
+        </style>
+      </head>
+      <body>
+          <div class="grid-container">
+            ${filteredHonor.map(h => `
+              <div class="slip">
+                 <div class="header">
+                    <h1>MA NU 01 BANYUPUTIH</h1>
+                    <p>SLIP HONOR - ${format(new Date(selectedYear, selectedMonth-1, 1), 'MMMM yyyy', {locale: id})}</p>
+                 </div>
+                 <div class="emp-info">
+                    <p class="emp-name">${h.employeeName}</p>
+                    <p class="emp-sub">ID: ${h.employeeId} | ${h.isSertifikasi ? 'SERTIF' : 'UMUM'}</p>
+                 </div>
+                 <div class="row">
+                    <span class="label">Disiplin: &nbsp;&nbsp; ${h.disciplinedDays} x ${h.rateBruto?.toLocaleString('id-ID') || 0}</span>
+                    <span class="val">${(h.disciplinedDays * (h.rateBruto || 0)).toLocaleString('id-ID')}</span>
+                 </div>
+                 <div class="row">
+                    <span class="label">Tdk Dis: &nbsp;&nbsp; ${h.nonDisciplinedDays} x ${h.rateLate?.toLocaleString('id-ID') || 0}</span>
+                    <span class="val">${(h.nonDisciplinedDays * (h.rateLate || 0)).toLocaleString('id-ID')}</span>
+                 </div>
+                 <div class="row voucher">
+                    <span class="label">Voucher: &nbsp; - Potongan -</span>
+                    <span class="val">(${h.voucherNominal.toLocaleString('id-ID')})</span>
+                 </div>
+                 <div class="total-box">
+                    <span class="total-label">TOTAL:</span>
+                    <span class="total-val">Rp ${h.netto.toLocaleString('id-ID')}</span>
+                 </div>
+              </div>
+            `).join('')}
+          </div>
+          <script>window.onload = function() { window.print(); };</script>
       </body>
       </html>
     `;
@@ -244,9 +334,12 @@ const HonorPage = () => {
                        {[2024,2025,2026,2027].map(y=><option key={y} value={y}>{y}</option>)}
                     </select>
                  </div>
-                 <button onClick={handlePrintNewTab} className="w-10 h-10 rounded-lg border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-200 flex items-center justify-center transition-all bg-white" title="Cetak PDF/Kertas">
-                   <i className="fa-solid fa-print"></i>
-                 </button>
+                  <button onClick={handlePrintSlips} className="w-10 h-10 rounded-lg border border-slate-200 text-slate-500 hover:text-emerald-600 hover:border-emerald-200 flex items-center justify-center transition-all bg-white" title="Cetak Struk (Slip) Kecil">
+                    <i className="fa-solid fa-receipt"></i>
+                  </button>
+                  <button onClick={handlePrintNewTab} className="w-10 h-10 rounded-lg border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-200 flex items-center justify-center transition-all bg-white" title="Cetak Daftar Laporan">
+                    <i className="fa-solid fa-print"></i>
+                  </button>
               </div>
            </div>
 

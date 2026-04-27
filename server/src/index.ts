@@ -712,7 +712,21 @@ app.get('/api/honor/recap', async (req, res) => {
     }
     const rB = emp.isSertifikasi ? rS : rU;
     const bruto = (dD * rB) + (nD * rL);
-    results.push({ employeeId: emp.id, employeeName: emp.name, isSertifikasi: emp.isSertifikasi, totalHadir: tH, disciplinedDays: dD, nonDisciplinedDays: nD, totalAbsent: tW - tH, totalWorkDays: tW, bruto, netto: Math.max(0, bruto - vV), voucherNominal: vV });
+    results.push({ 
+      employeeId: emp.id, 
+      employeeName: emp.name, 
+      isSertifikasi: emp.isSertifikasi, 
+      totalHadir: tH, 
+      disciplinedDays: dD, 
+      nonDisciplinedDays: nD, 
+      totalAbsent: tW - tH, 
+      totalWorkDays: tW, 
+      bruto, 
+      netto: Math.max(0, bruto - vV), 
+      voucherNominal: vV,
+      rateBruto: rB,
+      rateLate: rL
+    });
   }
   res.json(results);
 });
