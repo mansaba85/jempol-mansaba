@@ -65,7 +65,7 @@ function App() {
                 
                 <div className="flex items-center gap-4">
                    <div className="text-right hidden sm:block">
-                      <p className="text-xs font-black text-slate-900 leading-none mb-1 uppercase">IT MANSABA</p>
+                      <p className="text-xs font-black text-slate-900 leading-none mb-1 uppercase">JARIKU MANSABA</p>
                       <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Admin Console</p>
                    </div>
                    <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-white font-black text-[10px] border-2 border-white ring-2 ring-slate-100">MAN</div>

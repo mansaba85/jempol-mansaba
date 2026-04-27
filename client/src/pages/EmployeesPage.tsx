@@ -65,12 +65,40 @@ const EmployeesPage = () => {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   };
 
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState({ step: '', percent: 0 });
+
+  const handleSyncEmployees = () => {
+    setIsSyncing(true);
+    setSyncProgress({ step: 'Memulai...', percent: 0 });
+    
+    const eventSource = new EventSource(`${API_URL}/machine/sync-employees`);
+    
+    eventSource.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      setSyncProgress({ step: data.step, percent: data.percent });
+      
+      if (data.percent === 100) {
+        eventSource.close();
+        setIsSyncing(false);
+        toast.success('Sinkronisasi pegawai selesai!');
+        fetchData();
+      }
+    };
+
+    eventSource.onerror = () => {
+      eventSource.close();
+      setIsSyncing(false);
+      toast.error('Gagal terhubung ke mesin');
+    };
+  };
+
   const filteredEmployees = employees.filter(e => 
     e.name.toLowerCase().includes(search.toLowerCase()) || 
     (e.nip && e.nip.includes(search)) ||
     (String(e.id).includes(search))
   );
-
+  
   const toggleAll = () => {
     if (selectedIds.length === filteredEmployees.length && filteredEmployees.length > 0) setSelectedIds([]);
     else setSelectedIds(filteredEmployees.map(e => e.id));
@@ -189,6 +217,15 @@ const EmployeesPage = () => {
            </div>
            
            <button 
+             onClick={handleSyncEmployees}
+             disabled={isSyncing}
+             className="px-4 py-2.5 bg-white border border-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-50 transition-all flex items-center gap-2 disabled:opacity-50"
+           >
+             <i className={`fa-solid fa-rotate ${isSyncing ? 'fa-spin' : ''}`}></i>
+             {isSyncing ? 'Proses...' : 'Sinkron Mesin'}
+           </button>
+
+           <button 
              onClick={() => { setEditingId(null); setForm({id: '', name:'', nip:'', role:'GURU', transportRate:0}); setIsModalOpen(true); }}
              className="mansaba-btn-primary"
            >
@@ -196,6 +233,19 @@ const EmployeesPage = () => {
            </button>
         </div>
       </div>
+
+      {/* SYNC PROGRESS BAR (Hanya muncul saat sync) */}
+      {isSyncing && (
+        <div className="mansaba-card bg-blue-50 border-blue-100 animate-in fade-in slide-in-from-top duration-300">
+           <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-bold text-blue-700">{syncProgress.step}</span>
+              <span className="text-sm font-black text-blue-700">{syncProgress.percent}%</span>
+           </div>
+           <div className="w-full bg-blue-200 rounded-full h-2">
+              <div className="bg-blue-600 h-2 rounded-full transition-all duration-300" style={{ width: `${syncProgress.percent}%` }}></div>
+           </div>
+        </div>
+      )}
 
       {/* SEARCH AND FILTERS */}
       <div className="mansaba-card flex flex-col md:flex-row items-center justify-between gap-4">

@@ -60,7 +60,7 @@ const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
             <i className="fa-solid fa-fingerprint text-lg"></i>
           </div>
           <div>
-            <span className="text-lg font-bold text-slate-800 leading-none block">Mansaba</span>
+            <span className="text-lg font-bold text-slate-800 leading-none block">Jariku Mansaba</span>
             <span className="text-xs text-slate-500 leading-none">Absensi</span>
           </div>
         </NavLink>

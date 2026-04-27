@@ -15,6 +15,14 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 const prisma = new PrismaClient();
 const port = 3001;
 
+// --- SAFETY SHIELD (Cegah Server Mati Jika Mesin Error) ---
+process.on('uncaughtException', (err) => {
+  console.error('[CRITICAL ERROR - UNCAUGHT]:', err.message);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[CRITICAL ERROR - UNHANDLED REJECTION]:', reason);
+});
+
 // --- MASTER DATA & CONFIG ---
 
 // Categories & Timetables
@@ -285,6 +293,13 @@ app.get('/api/logs', async (req, res) => {
     where.timestamp = {};
     if (startDate) where.timestamp.gte = new Date(String(startDate));
     if (endDate) where.timestamp.lte = new Date(new Date(String(endDate)).setHours(23,59,59));
+  } else {
+    // Default: Tampilkan hanya data di tahun sekarang (dinamis)
+    const currentYear = new Date().getFullYear();
+    where.timestamp = {
+      gte: new Date(`${currentYear}-01-01`),
+      lte: new Date(`${currentYear}-12-31T23:59:59`)
+    };
   }
   const logs = await prisma.attendance.findMany({
     where, include: { employee: true }, orderBy: { timestamp: 'desc' }, take: 1000
@@ -373,79 +388,142 @@ app.delete('/api/attendance/manual', async (req, res) => {
   }
 });
 
-// Sync SSE
+app.get('/api/machine/storage', async (req, res) => {
+  try {
+    const activeDevices = await prisma.device.findMany({ where: { isActive: true } });
+    if (activeDevices.length === 0) return res.json({ percentage: 0 });
+    
+    const dev = activeDevices[0];
+    const zk = new ZKLib(dev.ipAddress, dev.port, 10000, 4000);
+    await zk.createSocket();
+    const storage = await zk.getStorageInfo();
+    await zk.disconnect();
+    
+    const { attCount, attSize } = storage;
+    const usedPercent = (attCount / attSize) * 100;
+    const remainingPercent = Math.max(0, Math.floor(100 - usedPercent));
+
+    res.json({ 
+      used: attCount, 
+      total: attSize, 
+      percentage: remainingPercent 
+    });
+  } catch (error) {
+    res.json({ percentage: 0, error: true });
+  }
+});
+
+// Jalur 1: Sinkronisasi Log Absensi dengan Validasi Jadwal Ketat
 app.get('/api/machine/sync-all', async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
   const sendProgress = (step: string, percent: number, details?: string) => res.write(`data: ${JSON.stringify({ step, percent, details })}\n\n`);
   
   try {
     const activeDevices = await prisma.device.findMany({ where: { isActive: true } });
     if (activeDevices.length === 0) {
-      sendProgress('Tidak ada mesin aktif', 100);
-      res.end();
-      return;
+        sendProgress('Tidak ada mesin aktif', 100);
+        res.end();
+        return;
     }
+    const employees = await prisma.employee.findMany({
+      include: { assignedPatterns: { include: { pattern: { include: { items: { include: { timetable: true } } } } } } }
+    });
+    const empMap = new Map(employees.map(e => [e.id, e]));
 
-    sendProgress('Inisialisasi Sinkronisasi...', 5);
     for (const dev of activeDevices) {
-      sendProgress(`Menghubungkan ke ${dev.name}...`, 15);
+      sendProgress(`Sinkronisasi ${dev.name}...`, 20);
       const zk = new ZKLib(dev.ipAddress, dev.port, 20000, 10000);
       await zk.createSocket();
-      
-      sendProgress(`Mengunduh Log Kehadiran (${dev.name})...`, 35);
       const logs = await zk.getAttendances();
-      
-      sendProgress(`Mengunduh Data Pegawai (${dev.name})...`, 60);
-      const users = await zk.getUsers();
-      
-      sendProgress(`Memproses Identitas (${dev.name})...`, 75);
-      const userMap = new Map(users.data.map((u: any) => [u.userId, u.name]));
-      for (const uidStr of [...new Set(logs.data.map((l: any) => l.deviceUserId))] as string[]) {
-        const uid = parseInt(uidStr);
-        const machineName = userMap.get(uidStr);
-        
-        if (!machineName || machineName.trim() === "") {
-          const existing = await prisma.employee.findUnique({ where: { id: uid } });
-          if (!existing) {
-            console.log(`[Sync] Abaikan ID ${uid} karena tidak bernama dan tidak ada di DB.`);
-            continue; 
-          }
-        }
+      await zk.disconnect(); 
 
-        const finalName = machineName || `Pegawai ${uid}`;
-        await prisma.employee.upsert({ 
-          where: { id: uid }, 
-          update: { name: finalName }, 
-          create: { id: uid, name: finalName } 
-        });
-      }
-
-      sendProgress(`Menyimpan Riwayat Baru (${dev.name})...`, 90);
-      const dbIds = (await prisma.employee.findMany({ select: { id: true } })).map(e => e.id);
       const last = await prisma.attendance.findFirst({ where: { deviceId: dev.id }, orderBy: { timestamp: 'desc' } });
       const lastTs = last ? last.timestamp.getTime() : 0;
-      const newLogs = logs.data.filter((l: any) => {
-        const t = new Date(l.recordTime).getTime();
-        return t > lastTs && t < (Date.now() + 86400000) && dbIds.includes(parseInt(l.deviceUserId));
-      });
-      if (newLogs.length > 0) {
-        await prisma.attendance.createMany({
-          data: newLogs.map((l: any) => ({ employeeId: parseInt(l.deviceUserId), timestamp: new Date(l.recordTime), type: 'CHECK', deviceId: dev.id })),
-          skipDuplicates: true
-        });
+      
+      const logsToSave: any[] = [];
+      for (const l of logs.data) {
+        const uid = parseInt(l.deviceUserId);
+        const tapTime = new Date(l.recordTime);
+        const tapYear = tapTime.getFullYear();
+        
+        // Cek Kevalidan: Abaikan tahun "ngaco" dan ID yang tidak terdaftar
+        if (tapYear < 2020 || tapYear > 2030 || tapTime.getTime() <= lastTs || !empMap.has(uid)) continue;
+
+        const emp = empMap.get(uid)!;
+        let tt: any = null;
+        for (const ap of emp.assignedPatterns) {
+            const diffDays = Math.floor((tapTime.getTime() - ap.startDate.getTime()) / (1000 * 60 * 60 * 24));
+            const dayInCycle = (diffDays % ap.pattern.cycleDays) + 1;
+            const item = ap.pattern.items.find(i => i.dayNumber === dayInCycle);
+            if (item) tt = item.timetable;
+        }
+
+        if (!tt) continue; 
+
+        const formatTime = (d: Date) => d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
+        const nowTime = formatTime(tapTime);
+
+        let type: string | null = null;
+        if (nowTime >= (tt.mulaiScanIn || '00:00') && nowTime <= (tt.akhirScanIn || '23:59')) type = 'CHECK IN';
+        else if (nowTime >= (tt.mulaiScanOut || '00:00') && nowTime <= (tt.akhirScanOut || '23:59')) type = 'CHECK OUT';
+
+        if (type) {
+            logsToSave.push({ employeeId: uid, timestamp: tapTime, type, deviceId: dev.id });
+        }
       }
-      await zk.disconnect();
+
+      if (logsToSave.length > 0) {
+        await prisma.attendance.createMany({ data: logsToSave, skipDuplicates: true });
+      }
+      await prisma.device.update({ where: { id: dev.id }, data: { lastSync: new Date() } });
     }
-    sendProgress('Success!', 100);
-    res.end();
-  } catch (error: any) { 
-    console.error("[Sync Error]", error);
-    sendProgress('Error', 5, "Koneksi ke mesin terputus atau mesin terlalu sibuk.");
-    res.end(); 
-  }
+    sendProgress('Selesai!', 100);
+  } catch (err: any) { sendProgress('ERROR: ' + err.message, 100); }
+  res.end();
 });
+
+// Jalur 2: Sinkronisasi Pegawai (Akan dipanggil dari Halaman Pegawai)
+app.get('/api/machine/sync-employees', async (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    const sendProgress = (step: string, percent: number, details?: string) => res.write(`data: ${JSON.stringify({ step, percent, details })}\n\n`);
+
+    try {
+        const activeDevices = await prisma.device.findMany({ where: { isActive: true } });
+        if (activeDevices.length === 0) {
+            sendProgress('Tidak ada mesin aktif', 100);
+            res.end();
+            return;
+        }
+
+        for (const dev of activeDevices) {
+            sendProgress(`Menghubungkan ke ${dev.name}...`, 20);
+            const zk = new ZKLib(dev.ipAddress, dev.port, 15000, 5000);
+            await zk.createSocket();
+
+            sendProgress(`Mengunduh Data Pegawai dari ${dev.name}...`, 50);
+            const users = await zk.getUsers();
+            await zk.disconnect();
+
+            sendProgress(`Memproses ${users.data.length} pegawai...`, 80);
+            for (const u of users.data) {
+                if (u.name && u.name.trim() !== '') {
+                    await prisma.employee.upsert({
+                        where: { id: parseInt(u.userId) },
+                        update: { name: u.name },
+                        create: { id: parseInt(u.userId), name: u.name }
+                    });
+                }
+            }
+        }
+        sendProgress('Data Pegawai Berhasil Diperbarui!', 100);
+    } catch (err: any) {
+        sendProgress('ERROR: ' + (err.message || 'Gagal sinkron pegawai'), 100);
+    }
+    res.end();
+}); 
 
 // Laporan Detail Harian per Kursi/Pegawai
 app.get('/api/reports/detailed', async (req, res) => {
@@ -840,4 +918,4 @@ app.post('/api/settings/restore', upload.single('backup'), async (req: any, res:
   }
 });
 
-app.listen(port, () => console.log(`Server MANSABA Running on port ${port}`));
+app.listen(port, () => console.log(`Server Jariku Mansaba Running on port ${port}`));
