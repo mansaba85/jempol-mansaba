@@ -53,7 +53,15 @@ const ReportsPage = () => {
           _t: Date.now()
         }
       });
-      setReportData(res.data);
+      
+      // Handle the new object format { summary, logs, employee }
+      if (reportMode === 'detailed' && res.data.logs) {
+        setReportData(res.data.logs);
+        // We can also store the summary for footer stats if we want
+        // But for now, setting logs ensures the table shows up
+      } else {
+        setReportData(res.data);
+      }
     } catch (err) {
       toast.error("Gagal menyusun laporan");
     } finally {
@@ -118,6 +126,384 @@ const ReportsPage = () => {
     } catch (err: any) {
         toast.error('Gagal menyimpan presensi manual');
     }
+  };
+
+  const handlePrintDetailed = () => {
+    if (reportData.length === 0) return;
+    const emp = employees.find(e => String(e.id) === selectedEmployeeId);
+    const win = window.open('', '_blank');
+    if (!win) return;
+
+    const tableRows = reportData.map(row => `
+      <tr>
+        <td>${row.hari || '-'}</td>
+        <td style="white-space: nowrap">${row.tanggal}</td>
+        <td align="center">${row.jamMasuk ? `${row.jamMasuk} - ${row.jamPulang}` : 'Libur'}</td>
+        <td align="center">${row.scanMasuk || '-'}</td>
+        <td align="center" style="color: red">${row.terlambat || '-'}</td>
+        <td align="center">${row.scanKeluar || '-'}</td>
+        <td align="center" style="color: orange">${row.plgCpt || '-'}</td>
+      </tr>
+    `).join('');
+
+    const html = `
+      <html>
+        <head>
+          <title>Laporan Presensi - ${emp?.name}</title>
+          <style>
+            @page { size: A4; margin: 10mm; }
+            body { font-family: 'Inter', system-ui, sans-serif; padding: 0; color: #1e293b; line-height: 1.2; font-size: 11px; }
+            
+            .kop-container { 
+              display: flex; 
+              align-items: center; 
+              justify-content: space-between;
+              gap: 15px; 
+              padding-bottom: 8px; 
+              border-bottom: 2px solid #0f172a;
+              margin-bottom: 15px;
+            }
+            .kop-identity { display: flex; align-items: center; gap: 15px; }
+            .kop-logo { width: 60px; height: 60px; object-fit: contain; }
+            .kop-text h1 { margin: 0; font-size: 18px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px; }
+            .kop-text p { margin: 1px 0; font-size: 9px; color: #64748b; }
+            .kop-text .address { font-style: italic; color: #94a3b8; }
+            
+            .kop-report-title { text-align: right; }
+            .kop-report-title h2 { margin: 0; font-size: 14px; font-weight: 800; color: #0f172a; text-transform: uppercase; border-bottom: 2px solid #0f172a; display: inline-block; }
+            .kop-report-title p { margin: 4px 0 0; font-size: 10px; color: #64748b; font-weight: 600; }
+
+            .info-grid { display: grid; grid-template-cols: 1fr 1fr; gap: 10px; margin-bottom: 12px; background: #f8fafc; padding: 10px; border-radius: 6px; border: 1px solid #e2e8f0; }
+            .info-item { display: flex; gap: 8px; font-size: 11px; }
+            .info-label { font-weight: 600; color: #64748b; width: 80px; }
+            .info-value { font-weight: 700; color: #0f172a; }
+
+            .report-table { width: 100%; border-collapse: collapse; font-size: 10px; }
+            .report-table th { background: #0f172a; color: white; padding: 6px 4px; text-transform: uppercase; font-size: 9px; }
+            .report-table td { border: 1px solid #cbd5e1; padding: 4px; }
+            .report-table tr:nth-child(even) { background: #f8fafc; }
+            
+            .footer { margin-top: 15px; display: flex; justify-content: flex-end; }
+            .signature { width: 180px; text-align: center; font-size: 11px; }
+            
+            @media print {
+              .report-table th { background: #0f172a !important; color: white !important; -webkit-print-color-adjust: exact; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="kop-container">
+            <div class="kop-identity">
+               ${config.school_logo ? `<img src="${config.school_logo}" class="kop-logo" />` : '<div style="width:60px;height:60px;background:#f1f5f9;border-radius:8px;"></div>'}
+               <div class="kop-text">
+                 <h1>${config.school_name || 'LEMBAGA PENDIDIKAN'}</h1>
+                 <p class="address">${config.school_address || 'Alamat Lengkap Institusi'}</p>
+                 <p>Email: software@mansaba.sch.id | Website: www.mansaba.sch.id</p>
+               </div>
+            </div>
+            
+            <div class="kop-report-title">
+              <h2>DETAIL PRESENSI</h2>
+              <p>Periode: ${startDate} s/d ${endDate}</p>
+            </div>
+          </div>
+          
+          <div class="info-grid">
+            <div>
+              <div class="info-item"><span class="info-label">Nama Pegawai</span><span class="info-value">: ${emp?.name}</span></div>
+              <div class="info-item"><span class="info-label">NIP / ID</span><span class="info-value">: ${emp?.nip || emp?.id}</span></div>
+            </div>
+            <div>
+              <div class="info-item"><span class="info-label">Jabatan</span><span class="info-value">: ${emp?.role || '-'}</span></div>
+              <div class="info-item"><span class="info-label">Cetak Pada</span><span class="info-value">: ${new Date().toLocaleDateString('id-ID')}</span></div>
+            </div>
+          </div>
+
+          <table class="report-table">
+            <thead>
+              <tr>
+                <th>Hari</th>
+                <th>Tanggal</th>
+                <th align="center">Jadwal</th>
+                <th align="center">Scan In</th>
+                <th align="center">Late</th>
+                <th align="center">Scan Out</th>
+                <th align="center">Early</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tableRows}
+            </tbody>
+          </table>
+
+          <div class="footer">
+            <div class="signature">
+              <p style="margin: 0">Mengetahui,</p>
+              <p style="margin: 0">Kepala Madrasah</p>
+              <br><br><br>
+              <p style="margin: 0"><strong>${config.headmaster_name || '................................'}</strong></p>
+              <p style="margin: 0; font-size: 9px; color: #64748b">NIP. ................................</p>
+            </div>
+          </div>
+
+          <script>
+            window.onload = () => {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `;
+    win.document.write(html);
+    win.document.close();
+  };
+
+  const handlePrintAllDetailed = async () => {
+    if (employees.length === 0) return;
+    
+    const toastId = toast.loading('Memproses laporan seluruh pegawai...');
+    try {
+      const allPages = [];
+      for (const emp of employees) {
+        try {
+          const res = await axios.get(`${API_URL}/reports/detailed`, { 
+            params: { employeeId: emp.id, startDate, endDate } 
+          });
+          const data = res.data;
+          if (!data.logs || data.logs.length === 0) continue;
+
+          const tableRows = data.logs.map((row: any) => `
+            <tr>
+              <td>${row.hari || '-'}</td>
+              <td style="white-space: nowrap">${row.tanggal}</td>
+              <td align="center">${row.jamMasuk ? `${row.jamMasuk} - ${row.jamPulang}` : 'Libur'}</td>
+              <td align="center">${row.scanMasuk || '-'}</td>
+              <td align="center" style="color: red">${row.terlambat || '-'}</td>
+              <td align="center">${row.scanKeluar || '-'}</td>
+              <td align="center" style="color: orange">${row.plgCpt || '-'}</td>
+            </tr>
+          `).join('');
+
+          allPages.push(`
+            <div style="page-break-after: always;">
+              <div class="kop-container">
+                <div class="kop-identity">
+                   ${config.school_logo ? `<img src="${config.school_logo}" class="kop-logo" />` : '<div style="width:60px;height:60px;background:#f1f5f9;border-radius:8px;"></div>'}
+                   <div class="kop-text">
+                     <h1>${config.school_name || 'LEMBAGA PENDIDIKAN'}</h1>
+                     <p class="address">${config.school_address || 'Alamat Lengkap Institusi'}</p>
+                     <p>Email: software@mansaba.sch.id | Website: www.mansaba.sch.id</p>
+                   </div>
+                </div>
+                <div class="kop-report-title">
+                  <h2>DETAIL PRESENSI</h2>
+                  <p>Periode: ${startDate} s/d ${endDate}</p>
+                </div>
+              </div>
+              
+              <div class="info-grid">
+                <div>
+                  <div class="info-item"><span class="info-label">Nama Pegawai</span><span class="info-value">: ${emp.name}</span></div>
+                  <div class="info-item"><span class="info-label">NIP / ID</span><span class="info-value">: ${emp.nip || emp.id}</span></div>
+                </div>
+                <div>
+                  <div class="info-item"><span class="info-label">Jabatan</span><span class="info-value">: ${emp.role || '-'}</span></div>
+                  <div class="info-item"><span class="info-label">Cetak Pada</span><span class="info-value">: ${new Date().toLocaleDateString('id-ID')}</span></div>
+                </div>
+              </div>
+
+              <table class="report-table">
+                <thead>
+                  <tr>
+                    <th>Hari</th>
+                    <th>Tanggal</th>
+                    <th align="center">Jadwal</th>
+                    <th align="center">Scan In</th>
+                    <th align="center">Late</th>
+                    <th align="center">Scan Out</th>
+                    <th align="center">Early</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${tableRows}
+                </tbody>
+              </table>
+
+              <div class="footer">
+                <div class="signature">
+                  <p style="margin: 0">Mengetahui,</p>
+                  <p style="margin: 0">Kepala Madrasah</p>
+                  <br><br><br>
+                  <p style="margin: 0"><strong>${config.headmaster_name || '................................'}</strong></p>
+                  <p style="margin: 0; font-size: 9px; color: #64748b">NIP. ................................</p>
+                </div>
+              </div>
+            </div>
+          `);
+        } catch (e) {
+          console.error(`Gagal ambil data untuk ${emp.name}`);
+        }
+      }
+
+      if (allPages.length === 0) {
+        toast.error('Tidak ada data presensi untuk dicetak', { id: toastId });
+        return;
+      }
+
+      const win = window.open('', '_blank');
+      if (!win) return;
+
+      const html = `
+        <html>
+          <head>
+            <title>Laporan Group - ${startDate} - ${endDate}</title>
+            <style>
+              @page { size: A4; margin: 10mm; }
+              body { font-family: 'Inter', system-ui, sans-serif; padding: 0; color: #1e293b; line-height: 1.2; font-size: 11px; }
+              .kop-container { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding-bottom: 8px; border-bottom: 2px solid #0f172a; margin-bottom: 15px; }
+              .kop-identity { display: flex; align-items: center; gap: 15px; }
+              .kop-logo { width: 60px; height: 60px; object-fit: contain; }
+              .kop-text h1 { margin: 0; font-size: 18px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px; }
+              .kop-text p { margin: 1px 0; font-size: 9px; color: #64748b; }
+              .kop-text .address { font-style: italic; color: #94a3b8; }
+              .kop-report-title { text-align: right; }
+              .kop-report-title h2 { margin: 0; font-size: 14px; font-weight: 800; color: #0f172a; text-transform: uppercase; border-bottom: 2px solid #0f172a; display: inline-block; }
+              .kop-report-title p { margin: 4px 0 0; font-size: 10px; color: #64748b; font-weight: 600; }
+              .info-grid { display: grid; grid-template-cols: 1fr 1fr; gap: 10px; margin-bottom: 12px; background: #f8fafc; padding: 10px; border-radius: 6px; border: 1px solid #e2e8f0; }
+              .info-item { display: flex; gap: 8px; font-size: 11px; }
+              .info-label { font-weight: 600; color: #64748b; width: 80px; }
+              .info-value { font-weight: 700; color: #0f172a; }
+              .report-table { width: 100%; border-collapse: collapse; font-size: 10px; }
+              .report-table th { background: #0f172a; color: white; padding: 6px 4px; text-transform: uppercase; font-size: 9px; }
+              .report-table td { border: 1px solid #cbd5e1; padding: 4px; }
+              .report-table tr:nth-child(even) { background: #f8fafc; }
+              .footer { margin-top: 15px; display: flex; justify-content: flex-end; }
+              .signature { width: 180px; text-align: center; font-size: 11px; }
+              @media print {
+                .report-table th { background: #0f172a !important; color: white !important; -webkit-print-color-adjust: exact; }
+              }
+            </style>
+          </head>
+          <body>
+            ${allPages.join('')}
+            <script>
+              window.onload = () => {
+                window.print();
+              };
+            </script>
+          </body>
+        </html>
+      `;
+      win.document.write(html);
+      win.document.close();
+      toast.success('Laporan grup berhasil di-generate', { id: toastId });
+    } catch (err) {
+      toast.error('Gagal generate laporan grup', { id: toastId });
+    }
+  };
+
+  const handlePrintSummary = () => {
+    if (reportData.length === 0) return;
+    const win = window.open('', '_blank');
+    if (!win) return;
+
+    const tableRows = reportData.map(row => `
+      <tr>
+        <td>${row.employeeName}</td>
+        <td align="center">${row.totalDays} Hari</td>
+        <td align="right">Rp ${row.totalAmount.toLocaleString('id-ID')}</td>
+      </tr>
+    `).join('');
+
+    const html = `
+      <html>
+        <head>
+          <title>Rekap Presensi Bulanan</title>
+          <style>
+             @page { size: A4; margin: 12mm; }
+            body { font-family: 'Inter', system-ui, sans-serif; padding: 0; color: #1e293b; line-height: 1.3; font-size: 11px; }
+            
+            .kop-container { 
+              display: flex; 
+              align-items: center; 
+              justify-content: space-between;
+              gap: 15px; 
+              padding-bottom: 8px; 
+              border-bottom: 2px solid #0f172a;
+              margin-bottom: 15px;
+            }
+            .kop-identity { display: flex; align-items: center; gap: 15px; }
+            .kop-logo { width: 60px; height: 60px; object-contain; }
+            .kop-text h1 { margin: 0; font-size: 18px; font-weight: 800; color: #0f172a; text-transform: uppercase; }
+            .kop-text p { margin: 1px 0; font-size: 10px; color: #64748b; }
+
+            .kop-report-title { text-align: right; }
+            .kop-report-title h2 { margin: 0; font-size: 14px; font-weight: 800; color: #0f172a; text-transform: uppercase; border-bottom: 2px solid #0f172a; display: inline-block; }
+            .kop-report-title p { margin: 4px 0 0; font-size: 10px; color: #64748b; font-weight: 600; }
+
+            .report-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+            .report-table th { background: #0f172a; color: white; padding: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+            .report-table td { border: 1px solid #e2e8f0; padding: 8px; }
+            .report-table tr:nth-child(even) { background: #f8fafc; }
+            
+            .footer { margin-top: 30px; display: flex; justify-content: flex-end; }
+            .signature { width: 180px; text-align: center; font-size: 11px; }
+            
+            @media print {
+              .report-table th { background: #0f172a !important; color: white !important; -webkit-print-color-adjust: exact; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="kop-container">
+            <div class="kop-identity">
+              ${config.school_logo ? `<img src="${config.school_logo}" class="kop-logo" />` : '<div style="width:60px;height:60px;background:#f1f5f9;border-radius:10px;"></div>'}
+              <div class="kop-text">
+                <h1>${config.school_name || 'LEMBAGA PENDIDIKAN'}</h1>
+                <p class="address">${config.school_address || 'Alamat Lengkap Institusi'}</p>
+                <p>Email: software@mansaba.sch.id | Website: www.mansaba.sch.id</p>
+              </div>
+            </div>
+
+            <div class="kop-report-title">
+              <h2>REKAPITULASI PRESENSI</h2>
+              <p>Periode: ${startDate} s/d ${endDate}</p>
+            </div>
+          </div>
+
+          <table class="report-table">
+            <thead>
+              <tr>
+                <th>Nama Pegawai</th>
+                <th align="center">Total Hadir</th>
+                <th align="right">Estimasi Transport</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tableRows}
+            </tbody>
+          </table>
+
+          <div class="footer">
+            <div class="signature">
+              <p>Mengetahui,</p>
+              <p style="margin: 0">Bendahara Madrasah</p>
+              <br><br><br>
+              <p style="margin: 0"><strong>${config.treasurer_name || '................................'}</strong></p>
+              <p style="margin: 0; font-size: 10px; color: #64748b">NIP. ................................</p>
+            </div>
+          </div>
+
+          <script>
+            window.onload = () => {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `;
+    win.document.write(html);
+    win.document.close();
   };
 
   return (
@@ -187,7 +573,18 @@ const ReportsPage = () => {
 
          {/* Aksi Tambahan */}
          <div className="flex gap-2 w-full md:w-auto justify-end">
-            <button onClick={() => window.print()} disabled={reportData.length === 0} className="w-10 h-10 bg-white text-slate-600 border border-slate-200 rounded-lg flex items-center justify-center hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-colors disabled:opacity-50 tooltip" title="Cetak Laporan">
+            {reportMode === 'detailed' && (
+               <button 
+                 onClick={handlePrintAllDetailed} 
+                 disabled={employees.length === 0} 
+                 className="px-4 h-10 bg-white text-slate-600 border border-slate-200 rounded-lg flex items-center justify-center gap-2 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 transition-colors disabled:opacity-50 tooltip font-bold text-[10px] uppercase tracking-wider" 
+                 title="Cetak Detil Seluruh Pegawai"
+               >
+                  <i className="fa-solid fa-copy"></i>
+                  <span>Cetak Semua</span>
+               </button>
+            )}
+            <button onClick={reportMode === 'detailed' ? handlePrintDetailed : handlePrintSummary} disabled={reportData.length === 0} className="w-10 h-10 bg-white text-slate-600 border border-slate-200 rounded-lg flex items-center justify-center hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-colors disabled:opacity-50 tooltip" title="Cetak Laporan">
                <i className="fa-solid fa-print"></i>
             </button>
             <div className={`w-10 h-10 rounded-lg flex items-center justify-center border  transition-colors ${loading ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>

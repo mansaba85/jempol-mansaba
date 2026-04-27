@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import ZKLib from 'node-zklib';
 import { PrismaClient } from '@prisma/client';
-import { format, endOfMonth } from 'date-fns';
+import { format, endOfMonth, parse } from 'date-fns';
 import multer from 'multer';
 import fs from 'fs';
 
@@ -838,6 +838,7 @@ app.get('/api/reports/detailed', async (req, res) => {
     // Gunakan formatter yang sama dengan honor/recap agar presisi
     const dateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' });
     const timeFormatter = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
+    const dayNameFormatter = new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', weekday: 'long' });
 
     const emp = await prisma.employee.findUnique({
       where: { id: empId },
@@ -976,13 +977,36 @@ app.get('/api/reports/detailed', async (req, res) => {
     }
 
     const bruto = (dD * rB) + (nD * rL);
+    
+    // Transform days to flattened logs for ReportsPage compatibility
+    const dailyLogs = days.map(d => {
+      const dateObj = new Date(parse(d.date, 'yyyy-MM-dd', new Date()));
+      const displayDate = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta' }).format(dateObj);
+      
+      return {
+        tanggal: displayDate,
+        hari: dayNameFormatter.format(dateObj),
+        jamMasuk: d.timetable?.jamMasuk || null,
+        jamPulang: d.timetable?.jamPulang || null,
+        scanMasuk: d.logs.in ? timeFormatter.format(new Date(d.logs.in)) : '-',
+        scanKeluar: d.logs.out ? timeFormatter.format(new Date(d.logs.out)) : '-',
+        terlambat: d.lateMinutes > 0 ? `${Math.floor(d.lateMinutes / 60)}j ${d.lateMinutes % 60}m` : null,
+        plgCpt: d.earlyMinutes > 0 ? `${Math.floor(d.earlyMinutes / 60)}j ${d.earlyMinutes % 60}m` : null,
+        lateMinutes: d.lateMinutes,
+        earlyMinutes: d.earlyMinutes,
+        ttpValue: d.ttpValue,
+        status: d.status
+      };
+    });
+
     res.json({
       employee: { id: emp.id, name: emp.name, nip: emp.nip, role: emp.role },
-      days,
+      days, // Keep for EmployeeDashboard (original format)
+      logs: dailyLogs, // For ReportsPage (flattened format)
       summary: {
         totalDays: tH,
         totalDaysInPeriod: tW,
-        totalAmount: bruto, // Bruto per day sum
+        totalAmount: bruto,
         voucherNominal: vV,
         netto: Math.max(0, bruto - vV),
         disciplinedDays: dD,

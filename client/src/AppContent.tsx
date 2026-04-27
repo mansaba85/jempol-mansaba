@@ -49,9 +49,7 @@ function AppContent() {
           </header>
 
           <main className="flex-1 overflow-y-auto no-scrollbar relative min-h-screen">
-            {/* Dark background for header in dashboard pages is handled by the pages themselves 
-                but we need to make sure padding doesn't push it down incorrectly */}
-            <div className="max-w-7xl mx-auto min-h-screen">
+            <div className="max-w-7xl mx-auto p-6 md:p-8 xl:p-10 min-h-screen">
               <Routes>
                 {/* Admin Routes */}
                 {user.role === 'ADMIN' && (
