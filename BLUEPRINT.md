@@ -13,16 +13,35 @@
 ---
 
 ## ✅ Progres Terakhir (April 2026)
-1.  **Atomic Transactional Logic:** Pendaftaran dan pembaruan pegawai kini menggunakan `prisma.$transaction`. Profil dan penugasan jadwal disimpan sekaligus atau tidak sama sekali (menjamin integritas data).
-2.  **Flexible Role System:** Mengubah kolom `Role` dari Enum ke **String**. Sistem sekarang mendukung kategori pegawai yang dinamis sesuai nama Kontainer Jadwal yang dibuat user.
-3.  **Selective Machine Sync:** Sinkronisasi mesin sekarang mengabaikan "Pegawai Tanpa Nama". Data log absensi hanya akan ditarik jika ID pegawai sudah dikenal di aplikasi.
-4.  **Premium Feedback System:** Mengintegrasikan `react-hot-toast` untuk notifikasi melayang yang modern dan informatif (menampilkan detail error dari server).
-5.  **Advanced Data Control:** Menambahkan fitur **Pagination** (10 data/halaman) dan **Filter Peran** pada tabel pegawai untuk performa yang lebih ringan.
+
+### Tahap 1: Core Foundation & Sync Logic
+1.  **Atomic Transactional Logic:** Pendaftaran dan pembaruan pegawai kini menggunakan `prisma.$transaction`.
+2.  **Flexible Role System:** Kolom `Role` bersifat dinamis (String) mendukung kategori sesuai jam kerja.
+3.  **Selective Machine Sync:** Data log hanya ditarik jika ID pegawai sudah terdaftar di sistem.
+4.  **Advanced UI:** Pagination, Filter Peran, dan `react-hot-toast` untuk feedback real-time.
+
+### Tahap 2: Attendance Reporting & Printing Excellence
+1.  **Robust Report Backend:** Endpoint `/api/reports/detailed` telah distabilkan dengan library `date-fns` untuk parsing tanggal ISO (YYYY-MM-DD) dan formatting tampilan (DD/MM/YYYY).
+2.  **Standardized Admin UI:** Menambahkan padding atas (`pt-8`) pada `AppContent.tsx` untuk menjaga konsistensi judul halaman di seluruh modul admin.
+3.  **Professional Printing System:** Implementasi cetak ke tab baru berbasis HTML/CSS murni (tanpa library PDF yang berat). 
+    - Menghasilkan file cetak yang ringan dan sangat tajam.
+    - Mendukung format **Kop Lembaga Modern** (Logo, Nama Sekolah, Alamat).
+    - Layout identitas pegawai menggunakan sistem grid yang rapi.
+4.  **Bulk Printing Feature:** Menambahkan kemampuan cetak laporan detil seluruh pegawai sekaligus dengan fitur otomatis pindah halaman (*page-break-after*) di setiap pergantian data pegawai.
+5.  **Enhanced Table Readability:** Header tabel global diperbarui dengan font lebih besar (13px), ultra-bold, dan uppercase untuk kesan institusi yang lebih tegas.
 
 ---
 
 ## 🛡️ Protokol Pengembangan (Wajib Diikuti)
-1.  **Data Integrity:** Gunakan `Set` untuk memfilter duplikasi `shiftId` sebelum dikirim ke database.
-2.  **Error Handling:** Selalu teruskan pesan error asli dari database ke frontend agar diagnosa masalah lebih cepat.
-3.  **Responsive Design:** Gunakan utility class Tailwind yang responsif (`md:`, `lg:`) pada setiap tabel dan dashboard.
-4.  **Schema Updates:** Jika mengubah `schema.prisma`, pastikan menjalankan `npx prisma generate` setelah menghentikan server untuk mendaftarkan tipe data baru.
+1.  **Data Consistency:** Backend menggunakan format ISO (`YYYY-MM-DD`) untuk kalkulasi internal. Hanya transform ke format lokal (`DD/MM/YYYY`) di layer presentasi atau output print.
+2.  **Institutional Aesthetics:** Setiap elemen cetak wajib menyertakan identitas lembaga yang diambil dari tabel `Settings` agar dinamis.
+3.  **Print Performance:** Gunakan `page-break-after: always` untuk pemisah data pegawai pada laporan grup agar hasil cetak tidak terpotong (terutama di kertas A4).
+4.  **UI Integrity:** Jangan menghapus padding global di `AppContent.tsx` agar elemen UI tidak menempel ke border atas jendela browser.
+5.  **Schema Consistency:** Pastikan tipe data `employeeId` konsisten antara `String` dan `Number` (saat ini sistem banyak melakukan casting ke String untuk fleksibilitas ID mesin).
+
+---
+
+## 🚀 Future Roadmap
+1.  **Dashboard Pegawai:** Menambahkan fitur ucapan selamat datang dinamis dan ringkasan statistik kehadiran mingguan.
+2.  **Notifikasi WA:** Integrasi pengiriman ringkasan kehadiran harian via WhatsApp API.
+3.  **Auto-Bakcup:** Sinkronisasi backup database otomatis ke Cloud Storage.
