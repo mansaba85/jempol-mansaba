@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { format } from 'date-fns';
 import toast, { Toaster } from 'react-hot-toast';
 
 const API_URL = '/api';
 
 const EmployeesPage = () => {
   const [employees, setEmployees] = useState<any[]>([]);
+  const [patterns, setPatterns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -13,7 +15,13 @@ const EmployeesPage = () => {
   const [sortField, setSortField] = useState('id');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  
+  // Custom Delete Confirmation State
+  const [deleteData, setDeleteData] = useState<{id: number, name: string} | null>(null);
+  const [bulkDeleteActive, setBulkDeleteActive] = useState(false);
 
   const [form, setForm] = useState({ 
     id: '', 
@@ -23,6 +31,11 @@ const EmployeesPage = () => {
     transportRate: 0
   });
 
+  const [rosterForm, setRosterForm] = useState({
+    patternId: '',
+    startDate: format(new Date(), 'yyyy-MM-dd')
+  });
+
   useEffect(() => {
     fetchData();
   }, []);
@@ -30,8 +43,12 @@ const EmployeesPage = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const empRes = await axios.get(`${API_URL}/employees`);
+      const [empRes, patRes] = await Promise.all([
+        axios.get(`${API_URL}/employees`),
+        axios.get(`${API_URL}/patterns`)
+      ]);
       setEmployees(empRes.data);
+      setPatterns(patRes.data);
     } catch (err) {
       toast.error('Gagal memuat data pegawai');
     } finally {
@@ -44,11 +61,20 @@ const EmployeesPage = () => {
     setSortField(field);
   };
 
+  const toggleSelection = (id: number) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+
   const filteredEmployees = employees.filter(e => 
     e.name.toLowerCase().includes(search.toLowerCase()) || 
     (e.nip && e.nip.includes(search)) ||
     (String(e.id).includes(search))
   );
+
+  const toggleAll = () => {
+    if (selectedIds.length === filteredEmployees.length && filteredEmployees.length > 0) setSelectedIds([]);
+    else setSelectedIds(filteredEmployees.map(e => e.id));
+  };
 
   const sortedEmployees = [...filteredEmployees].sort((a, b) => {
     let valA = a[sortField];
@@ -67,12 +93,60 @@ const EmployeesPage = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await axios.post(`${API_URL}/employees`, form);
-      toast.success(editingId ? 'Data pegawai diperbarui' : 'Pegawai baru didaftarkan');
+      if (editingId) {
+        await axios.put(`${API_URL}/employees/${editingId}`, form);
+        toast.success('Data pegawai diperbarui');
+      } else {
+        await axios.post(`${API_URL}/employees`, form);
+        toast.success('Pegawai baru didaftarkan');
+      }
       setIsModalOpen(false);
       fetchData();
     } catch (err: any) {
       toast.error('Gagal menyimpan data pegawai');
+    }
+  };
+
+  const handleBulkAssign = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedIds.length === 0) return;
+    try {
+      await axios.post(`${API_URL}/employees/bulk-pattern`, {
+        employeeIds: selectedIds,
+        patternId: parseInt(rosterForm.patternId),
+        startDate: rosterForm.startDate
+      });
+      toast.success(`${selectedIds.length} pegawai berhasil di-plot`);
+      setIsBulkModalOpen(false);
+      setSelectedIds([]);
+      fetchData();
+    } catch (err) {
+      toast.error('Gagal memproses plotting massal');
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (bulkDeleteActive) {
+      const loadingToast = toast.loading(`Menghapus ${selectedIds.length} pegawai...`);
+      try {
+        await axios.post(`${API_URL}/employees/bulk-delete`, { ids: selectedIds });
+        toast.success(`${selectedIds.length} pegawai berhasil dihapus`, { id: loadingToast });
+        setSelectedIds([]);
+        setBulkDeleteActive(false);
+        fetchData();
+      } catch (err) {
+        toast.error('Gagal menghapus pegawai massal', { id: loadingToast });
+      }
+    } else if (deleteData) {
+      const loadingToast = toast.loading(`Menghapus ${deleteData.name}...`);
+      try {
+        await axios.delete(`${API_URL}/employees/${deleteData.id}`);
+        toast.success('Pegawai berhasil dihapus', { id: loadingToast });
+        setDeleteData(null);
+        fetchData();
+      } catch (err) {
+        toast.error('Gagal menghapus pegawai', { id: loadingToast });
+      }
     }
   };
 
@@ -84,14 +158,36 @@ const EmployeesPage = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
            <h2 className="text-2xl font-semibold text-slate-800">Data Pegawai</h2>
-           <p className="text-sm text-slate-500 mt-1">Kelola data presensi, NIP, dan jabatan pegawai.</p>
+           <p className="text-sm text-slate-500 mt-1">Kelola data presensi, NIP, penjadwalan, dan jabatan pegawai.</p>
         </div>
         
         <div className="flex items-center gap-4">
+           {selectedIds.length > 0 && (
+             <div className="flex items-center gap-2 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
+               <span className="text-sm font-medium text-blue-700 mr-2">{selectedIds.length} data terpilih</span>
+               <button 
+                 onClick={() => {
+                   setRosterForm({patternId: '', startDate: format(new Date(), 'yyyy-MM-dd')});
+                   setIsBulkModalOpen(true);
+                 }}
+                 className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-md transition-colors"
+               >
+                 <i className="fa-solid fa-calendar-alt mr-1.5"></i> Plotting Masal
+               </button>
+               <button 
+                 onClick={() => setBulkDeleteActive(true)}
+                 className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-md transition-colors"
+               >
+                 <i className="fa-solid fa-trash mr-1.5"></i> Hapus
+               </button>
+             </div>
+           )}
+
            <div className="hidden lg:flex flex-col items-end mr-4">
               <span className="text-xs text-slate-500 mb-1">Total Pegawai</span>
               <span className="text-lg font-semibold text-slate-800">{employees.length} <span className="text-xs font-normal text-slate-500">Orang</span></span>
            </div>
+           
            <button 
              onClick={() => { setEditingId(null); setForm({id: '', name:'', nip:'', role:'GURU', transportRate:0}); setIsModalOpen(true); }}
              className="mansaba-btn-primary"
@@ -139,6 +235,9 @@ const EmployeesPage = () => {
          <table className="mansaba-table">
             <thead>
                <tr>
+               <th className="mansaba-th text-center w-12 cursor-pointer" onClick={toggleAll}>
+                  <i className={`fa-solid ${selectedIds.length > 0 && selectedIds.length === filteredEmployees.length ? 'fa-check-square text-blue-600 text-base' : 'fa-square text-slate-300 text-base hover:text-slate-400'}`}></i>
+               </th>
                <th className="mansaba-th text-center w-24">PIN</th>
                <th className="mansaba-th">Pegawai</th>
                <th className="mansaba-th text-center">Jabatan</th>
@@ -149,14 +248,18 @@ const EmployeesPage = () => {
             <tbody>
                {loading ? (
                   <tr>
-                     <td colSpan={5} className="py-12 text-center text-slate-500">
+                     <td colSpan={6} className="py-12 text-center text-slate-500">
                         <i className="fa-solid fa-spinner fa-spin text-xl text-blue-600 mb-2 block"></i> Memuat data...
                      </td>
                   </tr>
                ) : paginated.length > 0 ? paginated.map((emp) => {
                const activePattern = emp.assignedPatterns?.[0]?.pattern;
+               const isSelected = selectedIds.includes(emp.id);
                return (
-                  <tr key={emp.id} className="tr-hover">
+                  <tr key={emp.id} className={`tr-hover ${isSelected ? 'bg-blue-50/50' : ''}`}>
+                     <td className="mansaba-td text-center cursor-pointer" onClick={() => toggleSelection(emp.id)}>
+                        <i className={`fa-solid ${isSelected ? 'fa-check-square text-blue-600 text-base' : 'fa-square text-slate-300 text-base shadow-sm hover:text-slate-400'}`}></i>
+                     </td>
                      <td className="mansaba-td text-center font-medium">#{String(emp.id).padStart(4, '0')}</td>
                      <td className="mansaba-td">
                         <div className="flex flex-col">
@@ -171,30 +274,35 @@ const EmployeesPage = () => {
                      </td>
                      <td className="mansaba-td">
                         {activePattern ? (
-                           <span className="text-sm text-slate-700">{activePattern.name}</span>
+                           <div className="flex flex-col">
+                             <span className="text-sm font-semibold text-slate-700">{activePattern.name}</span>
+                             <span className="text-[10px] uppercase text-slate-400 mt-0.5 tracking-wider">Mulai: <span className="font-medium">{format(new Date(emp.assignedPatterns[0].startDate), 'dd/MM/yyyy')}</span></span>
+                           </div>
                         ) : (
                            <span className="text-xs text-slate-400 italic">Belum diatur</span>
                         )}
                      </td>
                      <td className="mansaba-td text-right">
-                        <div className="flex items-center justify-end gap-2">
+                        <div className="flex items-center justify-end gap-2 pr-2">
                            <button 
+                             type="button"
                              onClick={() => {
                                 setEditingId(emp.id);
                                 setForm({ id: String(emp.id), name: emp.name, nip: emp.nip || '', role: emp.role, transportRate: emp.transportRate || 0 });
                                 setIsModalOpen(true);
                              }}
-                             className="w-8 h-8 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                             className="w-8 h-8 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all flex items-center justify-center border border-transparent hover:border-blue-100"
                              title="Edit Pegawai"
                            >
-                              <i className="fa-solid fa-pen-to-square"></i>
+                              <i className="fa-solid fa-pen-to-square pointer-events-none"></i>
                            </button>
                            <button 
-                             onClick={async () => { if (window.confirm('Yakin ingin menghapus pegawai ini?')) { await axios.delete(`${API_URL}/employees/${emp.id}`); fetchData(); } }}
-                             className="w-8 h-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                             type="button"
+                             onClick={() => setDeleteData({ id: emp.id, name: emp.name })}
+                             className="w-8 h-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all flex items-center justify-center border border-transparent hover:border-rose-100"
                              title="Hapus Pegawai"
                            >
-                              <i className="fa-solid fa-trash-can"></i>
+                              <i className="fa-solid fa-trash-can pointer-events-none"></i>
                            </button>
                         </div>
                      </td>
@@ -202,7 +310,7 @@ const EmployeesPage = () => {
                );
                }) : (
                <tr>
-                  <td colSpan={5} className="py-12 text-center text-slate-500">
+                  <td colSpan={6} className="py-12 text-center text-slate-500">
                      Belum ada data pegawai yang terdaftar.
                   </td>
                </tr>
@@ -224,36 +332,102 @@ const EmployeesPage = () => {
          )}
       </div>
 
-      {/* MODAL FORM */}
+      {/* MODAL PLOTTING MASSAL */}
+      {isBulkModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+           <div className="bg-white rounded-xl shadow-lg w-full max-w-lg p-8 relative">
+              <button onClick={() => setIsBulkModalOpen(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-600">
+                 <i className="fa-solid fa-xmark text-xl"></i>
+              </button>
+              
+              <div className="flex items-center gap-4 mb-6 pb-6 border-b border-slate-100">
+                 <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
+                    <i className="fa-solid fa-calendar-check text-xl"></i>
+                 </div>
+                 <div>
+                    <h3 className="text-xl font-bold text-slate-800">Plotting Massal</h3>
+                    <p className="text-sm text-slate-500">Memasang jadwal untuk {selectedIds.length} pegawai terpilih</p>
+                 </div>
+              </div>
+
+              <form onSubmit={handleBulkAssign} className="space-y-6">
+                 <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-3">Pilih Pola Shift Kerja</label>
+                    <div className="grid grid-cols-1 gap-3 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                       {patterns.length === 0 ? (
+                          <div className="text-sm text-slate-500 italic py-4 text-center">Data Master Jam belum ada. Silakan atur terlebih dahulu.</div>
+                       ) : patterns.map(p => (
+                          <label key={p.id} className={`flex items-center justify-between p-4 rounded-xl border-2 transition-all cursor-pointer ${rosterForm.patternId === String(p.id) ? 'bg-blue-50 border-blue-200 text-blue-800' : 'bg-white border-slate-100 text-slate-600 hover:border-slate-200'}`}>
+                             <div className="flex items-center gap-3">
+                                <input 
+                                  type="radio" 
+                                  className="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500" 
+                                  checked={rosterForm.patternId === String(p.id)} 
+                                  onChange={() => setRosterForm({
+                                    patternId: String(p.id),
+                                    startDate: p.startDate ? format(new Date(p.startDate), 'yyyy-MM-dd') : rosterForm.startDate
+                                  })} 
+                                />
+                                <div className="flex flex-col">
+                                   <span className="text-sm font-semibold">{p.name}</span>
+                                   <span className="text-xs opacity-70">Siklus {p.cycleDays} Hari</span>
+                                </div>
+                             </div>
+                             <span className="text-[10px] font-bold uppercase px-2 py-1 bg-white rounded-md border border-slate-200/50">{p.category}</span>
+                          </label>
+                       ))}
+                    </div>
+                 </div>
+
+                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-center justify-between">
+                    <div>
+                       <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Tanggal Mulai Berlaku</p>
+                       <p className="text-xs text-slate-400">Dimulai saat siklus pola hari 1</p>
+                    </div>
+                    <input type="date" className="mansaba-input w-40" value={rosterForm.startDate} onChange={e => setRosterForm({...rosterForm, startDate: e.target.value})} required />
+                 </div>
+
+                 <div className="pt-4 flex justify-end gap-3">
+                    <button type="button" onClick={() => setIsBulkModalOpen(false)} className="px-5 py-2.5 rounded-lg text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200">Batal</button>
+                    <button type="submit" className="mansaba-btn-primary px-6 py-2.5" disabled={!rosterForm.patternId}>
+                       Pasang Pola
+                    </button>
+                 </div>
+              </form>
+           </div>
+        </div>
+      )}
+
+      {/* MODAL FORM EDIT/TAMBAH PEGAWAI */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-           <div className="bg-white rounded-xl shadow-lg w-full max-w-lg p-6 relative">
+           <div className="bg-white rounded-xl shadow-lg w-full max-w-xl p-8 relative">
               <button onClick={() => setIsModalOpen(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-600">
                  <i className="fa-solid fa-xmark text-xl"></i>
               </button>
 
-              <h3 className="text-lg font-semibold text-slate-800 mb-6">{editingId ? 'Edit Data Pegawai' : 'Tambah Pegawai Baru'}</h3>
+              <h3 className="text-xl font-bold text-slate-800 mb-6">{editingId ? 'Edit Data Pegawai' : 'Tambah Pegawai Baru'}</h3>
               
-              <form onSubmit={handleSubmit} className="space-y-4">
-                 <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-slate-700">PIN Mesin <span className="text-rose-500">*</span></label>
+              <form onSubmit={handleSubmit} className="space-y-5">
+                 <div className="grid grid-cols-2 gap-5">
+                    <div className="space-y-2">
+                        <label className="text-sm font-semibold text-slate-700">PIN Mesin <span className="text-rose-500">*</span></label>
                         <input type="number" className="mansaba-input" value={form.id} onChange={e => setForm({...form, id: e.target.value})} disabled={!!editingId} required placeholder="Contoh: 1" />
                     </div>
-                    <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-slate-700">NIP</label>
+                    <div className="space-y-2">
+                        <label className="text-sm font-semibold text-slate-700">NIP</label>
                         <input className="mansaba-input" value={form.nip} onChange={e => setForm({...form, nip: e.target.value})} placeholder="Opsional" />
                     </div>
                  </div>
                  
-                 <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-slate-700">Nama Lengkap <span className="text-rose-500">*</span></label>
+                 <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-700">Nama Lengkap <span className="text-rose-500">*</span></label>
                     <input className="mansaba-input" value={form.name} onChange={e => setForm({...form, name: e.target.value})} required placeholder="Contoh: Budi Santoso, S.Pd" />
-                 </div>
+                  </div>
                  
-                 <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-slate-700">Jabatan <span className="text-rose-500">*</span></label>
+                 <div className="grid grid-cols-2 gap-5">
+                    <div className="space-y-2">
+                        <label className="text-sm font-semibold text-slate-700">Jabatan <span className="text-rose-500">*</span></label>
                         <select className="mansaba-input" value={form.role} onChange={e => setForm({...form, role: e.target.value})}>
                            <option value="GURU">Guru</option>
                            <option value="STAF">Staf / Karyawan</option>
@@ -261,11 +435,45 @@ const EmployeesPage = () => {
                     </div>
                  </div>
 
-                 <div className="pt-4 flex justify-end gap-3">
-                    <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2 rounded-lg text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200">Batal</button>
-                    <button type="submit" className="mansaba-btn-primary px-6">Simpan Pegawai</button>
+                 <div className="pt-6 border-t border-slate-100 flex justify-end gap-3 mt-8">
+                    <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 rounded-lg text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">Batal</button>
+                    <button type="submit" className="mansaba-btn-primary px-8 py-2.5">Simpan Data</button>
                  </div>
               </form>
+           </div>
+        </div>
+      )}
+
+      {/* CUSTOM DELETE CONFIRMATION MODAL */}
+      {(deleteData || bulkDeleteActive) && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
+           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 text-center transform transition-all scale-100 animate-in fade-in zoom-in duration-200">
+              <div className="w-20 h-20 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                 <i className="fa-solid fa-trash-can text-3xl"></i>
+              </div>
+              
+              <h3 className="text-2xl font-bold text-slate-800 mb-2">Konfirmasi Hapus</h3>
+              <p className="text-slate-500 mb-8 px-4">
+                 {bulkDeleteActive 
+                   ? `Anda yakin ingin menghapus ${selectedIds.length} pegawai yang dipilih? Tindakan ini tidak dapat dibatalkan.`
+                   : `Apakah Anda yakin ingin menghapus pegawai ${deleteData?.name}? Seluruh riwayat presensi akan ikut terhapus.`
+                 }
+              </p>
+
+              <div className="flex flex-col gap-3">
+                 <button 
+                   onClick={confirmDelete}
+                   className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl transition-colors shadow-lg shadow-rose-200"
+                 >
+                   Ya, Hapus Sekarang
+                 </button>
+                 <button 
+                   onClick={() => { setDeleteData(null); setBulkDeleteActive(false); }}
+                   className="w-full py-3 bg-white border border-slate-200 text-slate-600 font-semibold rounded-xl hover:bg-slate-50 transition-colors"
+                 >
+                   Batalkan
+                 </button>
+              </div>
            </div>
         </div>
       )}

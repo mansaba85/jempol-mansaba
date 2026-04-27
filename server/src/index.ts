@@ -177,10 +177,17 @@ app.post('/api/employees/bulk-pattern', async (req, res) => {
 
 app.delete('/api/employees/:id', async (req, res) => {
   const id = parseInt(req.params.id);
-  await prisma.employeePattern.deleteMany({ where: { employeeId: id } });
-  await prisma.attendance.deleteMany({ where: { employeeId: id } });
-  await prisma.employee.delete({ where: { id } });
-  res.json({ success: true });
+  try {
+    await prisma.employeePattern.deleteMany({ where: { employeeId: id } });
+    await prisma.attendance.deleteMany({ where: { employeeId: id } });
+    await prisma.honor.deleteMany({ where: { employeeId: id } });
+    await prisma.employeeShift.deleteMany({ where: { employeeId: id } });
+    await prisma.employee.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (error) {
+    console.error("[Delete Employee Error]", error);
+    res.status(500).json({ error: 'Gagal menghapus pegawai' });
+  }
 });
 
 // Device Management
@@ -207,6 +214,8 @@ app.post('/api/employees/bulk-delete', async (req, res) => {
     const numericIds = ids.map(Number);
     await prisma.employeePattern.deleteMany({ where: { employeeId: { in: numericIds } } });
     await prisma.attendance.deleteMany({ where: { employeeId: { in: numericIds } } });
+    await prisma.honor.deleteMany({ where: { employeeId: { in: numericIds } } });
+    await prisma.employeeShift.deleteMany({ where: { employeeId: { in: numericIds } } });
     await prisma.employee.deleteMany({ where: { id: { in: numericIds } } });
     res.json({ success: true });
   } catch (error) {
@@ -296,6 +305,72 @@ app.post('/api/attendance/manual', async (req, res) => {
     create: { employeeId: parseInt(employeeId), timestamp, type: 'CHECK', isManual: true }
   });
   res.json({ success: true });
+});
+
+app.delete('/api/attendance/manual', async (req, res) => {
+  const { employeeId, date, type } = req.query; // type: 'IN' or 'OUT'
+  try {
+    const empId = parseInt(String(employeeId));
+    const targetDate = new Date(`${date}T00:00:00+07:00`);
+    const nextDate = new Date(targetDate.getTime() + 86400000);
+
+    const emp = await prisma.employee.findUnique({
+      where: { id: empId },
+      include: { assignedPatterns: { include: { pattern: { include: { items: { include: { timetable: true } } } } } } }
+    });
+
+    if (!emp) return res.status(404).json({ error: 'Pegawai tidak ditemukan' });
+
+    let timetable: any = null;
+    const ep = emp.assignedPatterns[0];
+    if (ep && ep.pattern?.startDate) {
+        const dS = new Date(ep.pattern.startDate); dS.setHours(0,0,0,0);
+        const dC = new Date(targetDate); dC.setHours(0,0,0,0);
+        const diff = Math.round((dC.getTime() - dS.getTime()) / 86400000);
+        if (diff >= 0) {
+            const dy = (diff % ep.pattern.cycleDays) + 1;
+            const ci = ep.pattern.items.find(i => i.dayNumber === dy);
+            timetable = ci?.timetable;
+        }
+    }
+
+    const logs = await prisma.attendance.findMany({
+        where: { employeeId: empId, timestamp: { gte: targetDate, lte: nextDate } }
+    });
+
+    const manualLogs = logs.filter(l => l.isManual);
+    if (manualLogs.length === 0) return res.json({ success: true });
+
+    let toDelete: any[] = [];
+    if (timetable) {
+      const [thM, tmM] = timetable.jamMasuk.split(/[:.]/).map(Number);
+      const [thP, tmP] = timetable.jamPulang.split(/[:.]/).map(Number);
+
+      toDelete = manualLogs.filter(l => {
+          const hStr = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(l.timestamp);
+          const [lh, lm] = hStr.split(':').map(Number);
+          const dM = Math.abs((lh * 60 + lm) - (thM * 60 + tmM));
+          const dP = Math.abs((lh * 60 + lm) - (thP * 60 + tmP));
+          return type === 'IN' ? dM <= dP : dP < dM;
+      });
+    } else {
+      // Jika tidak ada jadwal, hapus log manual pertama (IN) atau terakhir (OUT)
+      const sortedManual = [...manualLogs].sort((a,b) => a.timestamp.getTime() - b.timestamp.getTime());
+      if (type === 'IN') toDelete = [sortedManual[0]];
+      else if (sortedManual.length > 1) toDelete = [sortedManual[sortedManual.length-1]];
+    }
+
+    if (toDelete.length > 0) {
+        await prisma.attendance.deleteMany({
+            where: { id: { in: toDelete.map(d => d.id).filter(id => id !== undefined) } }
+        });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: 'Gagal menghapus presensi' });
+  }
 });
 
 // Sync SSE
@@ -585,7 +660,7 @@ app.get('/api/honor/recap', async (req, res) => {
   const results = [];
   for (const emp of employees) {
     const logs = await prisma.attendance.findMany({ where: { employeeId: emp.id, timestamp: { gte: start, lte: new Date(end.getTime() + 86400000) } } });
-    let dD = 0, nD = 0, tH = 0;
+    let dD = 0, nD = 0, tH = 0, tW = 0;
     let cd = new Date(start);
     while (cd <= end) {
       let tt: any = null; const ep = emp.assignedPatterns[0];
@@ -603,6 +678,7 @@ app.get('/api/honor/recap', async (req, res) => {
         }
       }
       if (tt) {
+        tW++;
         const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(cd);
         const isO = tt.jamPulang < tt.jamMasuk;
         const iL = logs.find(l => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(l.timestamp) === dateStr && (l.isManual || (() => {
@@ -636,7 +712,7 @@ app.get('/api/honor/recap', async (req, res) => {
     }
     const rB = emp.isSertifikasi ? rS : rU;
     const bruto = (dD * rB) + (nD * rL);
-    results.push({ employeeId: emp.id, employeeName: emp.name, isSertifikasi: emp.isSertifikasi, totalHadir: tH, disciplinedDays: dD, nonDisciplinedDays: nD, bruto, netto: Math.max(0, bruto - vV), voucherNominal: vV });
+    results.push({ employeeId: emp.id, employeeName: emp.name, isSertifikasi: emp.isSertifikasi, totalHadir: tH, disciplinedDays: dD, nonDisciplinedDays: nD, totalAbsent: tW - tH, totalWorkDays: tW, bruto, netto: Math.max(0, bruto - vV), voucherNominal: vV });
   }
   res.json(results);
 });

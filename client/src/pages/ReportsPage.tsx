@@ -79,8 +79,19 @@ const ReportsPage = () => {
     const val = editValue.trim();
     setEditingCell(null);
 
-    // Jika kosong, abaikan pembuatan data
+    // Jika kosong, hapus data presensi manual yang ada
     if (val === "" || val === "-") {
+      try {
+          const parsedDate = parse(dateStr, 'dd/MM/yyyy', new Date());
+          const formattedDate = format(parsedDate, 'yyyy-MM-dd');
+          await axios.delete(`${API_URL}/attendance/manual`, {
+              params: { employeeId: selectedEmployeeId, date: formattedDate, type }
+          });
+          toast.success("Presensi berhasil dikosongkan");
+          generateReport(); 
+      } catch (err) {
+          toast.error('Gagal mengosongkan presensi');
+      }
       return; 
     }
 
@@ -93,7 +104,6 @@ const ReportsPage = () => {
         const parsedDate = parse(dateStr, 'dd/MM/yyyy', new Date());
         const formattedDate = format(parsedDate, 'yyyy-MM-dd');
         
-        // Pastikan jam selalu memiliki dua digit untuk mencegah node invalid date
         let safeTime = val.replace('.', ':');
         if (safeTime.length === 4) safeTime = '0' + safeTime; 
 
