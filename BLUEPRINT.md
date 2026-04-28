@@ -41,7 +41,26 @@
 
 ---
 
-## 🚀 Future Roadmap
-1.  **Dashboard Pegawai:** Menambahkan fitur ucapan selamat datang dinamis dan ringkasan statistik kehadiran mingguan.
-2.  **Notifikasi WA:** Integrasi pengiriman ringkasan kehadiran harian via WhatsApp API.
-3.  **Auto-Bakcup:** Sinkronisasi backup database otomatis ke Cloud Storage.
+---
+
+## 📦 Deployment Guide
+
+Project ini sudah dirancang untuk **Universal Deployment** (Single Port).
+
+### 1. Panel Biasa (aaPanel / cPanel / FastPanel)
+- Paste kode project ke root directory.
+- Setup **Node.js Manager**:
+  - Run Script: `npm run build` (di root) untuk compile Frontend & Backend.
+  - Startup File: `server/dist/index.js`.
+  - Port: `3001` (atau sesuaikan di `.env`).
+- Database: Gunakan MySQL asli yang ada di panel, masukkan URL-nya ke `.env`.
+
+### 2. Portainer / Docker
+- Gunakan `docker-compose.yml` yang sudah disediakan.
+- Jalankan perintah: `docker-compose up -d --build`.
+- Aplikasi akan otomatis melakukan `prisma migrate deploy` saat container menyala.
+
+### 3. Akses Mandiri (LAN)
+- Jalankan di komputer PC Windows yang satu jaringan dengan Mesin Absensi.
+- Gunakan `npm run dev` pada folder `client` dan server.
+- Akses via IP LAN (contoh: `http://192.168.1.100:5173`).

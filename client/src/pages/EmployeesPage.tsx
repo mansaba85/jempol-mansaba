@@ -73,9 +73,7 @@ const EmployeesPage = () => {
     setIsSyncing(true);
     setSyncProgress({ step: 'Memulai...', percent: 0 });
     
-    const protocol = window.location.protocol;
-    const hostname = window.location.hostname;
-    const eventSource = new EventSource(`${protocol}//${hostname}:3001${API_URL}/machine/sync-employees`);
+    const eventSource = new EventSource(`${API_URL}/machine/sync-employees`);
     
     eventSource.onmessage = (event) => {
       const data = JSON.parse(event.data);

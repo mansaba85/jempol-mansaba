@@ -1,13 +1,15 @@
 {
-  "name": "absensi_mansaba_root",
+  "name": "absensi-mansaba-monorepo",
   "version": "1.0.0",
+  "description": "Deployment root for Absensi Mansaba (Client + Server)",
   "scripts": {
-    "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
-    "server": "npm run dev --prefix server",
-    "client": "npm run dev --prefix client",
-    "install-all": "npm install && npm install --prefix server && npm install --prefix client"
-  },
-  "devDependencies": {
-    "concurrently": "^8.2.2"
+    "install:all": "npm install --prefix server && npm install --prefix client",
+    "build:client": "npm run build --prefix client",
+    "build:server": "npm run build --prefix server",
+    "prisma:generate": "npx prisma generate --schema=./server/prisma/schema.prisma",
+    "prisma:deploy": "npx prisma migrate deploy --schema=./server/prisma/schema.prisma",
+    "build": "npm run compile",
+    "compile": "npm run install:all && npm run prisma:generate && npm run build:client && npm run build:server",
+    "start": "npm start --prefix server"
   }
 }

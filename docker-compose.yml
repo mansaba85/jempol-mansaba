@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: mansaba_app
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=mysql://mansaba_user:mansaba_secret@db:3306/mansaba_db
+      - JWT_SECRET=change_this_to_a_secure_random_string
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - mansaba_uploads:/app/server/uploads
+
+  db:
+    image: mysql:8.0
+    container_name: mansaba_db
+    restart: unless-stopped
+    environment:
+      - MYSQL_DATABASE=mansaba_db
+      - MYSQL_USER=mansaba_user
+      - MYSQL_PASSWORD=mansaba_secret
+      - MYSQL_ROOT_PASSWORD=mansaba_root_secret
+    volumes:
+      - mansaba_db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+volumes:
+  mansaba_db_data:
+  mansaba_uploads:

@@ -5,7 +5,11 @@ import { PrismaClient } from '@prisma/client';
 import { format, endOfMonth, parse } from 'date-fns';
 import multer from 'multer';
 import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import jwt from 'jsonwebtoken';
 
 const upload = multer({ dest: 'uploads/' });
@@ -1382,6 +1386,12 @@ app.post('/api/settings/restore', upload.single('backup'), async (req: any, res:
     if (req.file) fs.unlinkSync(req.file.path);
     res.status(500).json({ error: 'Gagal restore' }); 
   }
+});
+
+// --- SERVE FRONTEND (Untuk Produksi/CPanel) ---
+app.use(express.static(path.join(__dirname, '../../client/dist')));
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../../client/dist/index.html'));
 });
 
 app.listen(port, () => console.log(`Server Jariku Mansaba Running on port ${port}`));
