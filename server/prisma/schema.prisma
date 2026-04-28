@@ -19,7 +19,7 @@ model Employee {
   transportRate     Float        @default(0) // Honor transport per hari hadir
   fingerId          String?
   cardNo            String?
-  pin               String?      // 6 Digit PIN masuk portal
+  pin               String?      @unique // 6 Digit PIN masuk portal
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
   attendances       Attendance[]

@@ -11,6 +11,7 @@ const LoginPage = () => {
   const [password, setPassword] = useState('');
   const [empId, setEmpId] = useState('');
   const [pin, setPin] = useState('');
+  const [empLoginMethod, setEmpLoginMethod] = useState<'id_pin' | 'pin_only'>('pin_only');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   
@@ -28,13 +29,16 @@ const LoginPage = () => {
     if (loginMode === 'admin') {
       if (!username || !password) return toast.error('Masukkan username & password');
     } else {
-      if (!empId || !pin) return toast.error('Masukkan ID Mesin & PIN');
+      if (empLoginMethod === 'id_pin' && !empId) return toast.error('Masukkan ID Pegawai');
+      if (!pin || pin.length < 6) return toast.error('Masukkan 6-Digit PIN');
     }
 
     setLoading(true);
     try {
       const endpoint = loginMode === 'admin' ? '/api/login' : '/api/login/employee';
-      const payload = loginMode === 'admin' ? { username, password } : { id: empId, pin };
+      const payload = loginMode === 'admin' 
+        ? { username, password } 
+        : { id: empLoginMethod === 'id_pin' ? empId : null, pin };
       
       const res = await axios.post(endpoint, payload);
       login(res.data.user, res.data.token);
@@ -153,23 +157,41 @@ const LoginPage = () => {
                  </>
               ) : (
                  <>
-                    {/* Employee Fields */}
-                    <div className="space-y-3">
-                       <label className="text-[10px] font-bold text-slate-400 tracking-[0.2em] uppercase ml-1">PIN Mesin / ID Pegawai</label>
-                       <div className="relative group">
-                          <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-600 transition-colors">
-                             <Binary size={20} />
-                          </div>
-                          <input 
-                             type="number" 
-                             value={empId}
-                             onChange={(e) => setEmpId(e.target.value)}
-                             className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-4.5 pl-14 pr-4 text-slate-800 font-bold focus:outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all font-outfit"
-                             placeholder="Contoh: 15"
-                          />
-                       </div>
-                       <p className="text-[9px] text-slate-400 italic px-2">Masukkan nomor ID yang terdaftar di mesin absensi.</p>
-                    </div>
+                    {/* Employee Login Method Switcher */}
+                     <div className="flex justify-center gap-4 mb-3">
+                        <button 
+                           type="button"
+                           onClick={() => setEmpLoginMethod('pin_only')}
+                           className={`text-[10px] font-bold uppercase tracking-widest px-4 py-2 rounded-full transition-all ${empLoginMethod === 'pin_only' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30' : 'bg-white border border-slate-200 text-slate-400 hover:bg-slate-50'}`}
+                        >
+                           PIN Saja
+                        </button>
+                        <button 
+                           type="button"
+                           onClick={() => setEmpLoginMethod('id_pin')}
+                           className={`text-[10px] font-bold uppercase tracking-widest px-4 py-2 rounded-full transition-all ${empLoginMethod === 'id_pin' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30' : 'bg-white border border-slate-200 text-slate-400 hover:bg-slate-50'}`}
+                        >
+                           ID + PIN
+                        </button>
+                     </div>
+
+                     {empLoginMethod === 'id_pin' && (
+                        <div className="space-y-3 animate-in fade-in slide-in-from-top-4 duration-300">
+                           <label className="text-[10px] font-bold text-slate-400 tracking-[0.2em] uppercase ml-1">ID Pegawai (Mesin)</label>
+                           <div className="relative group">
+                              <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-600 transition-colors">
+                                 <Binary size={20} />
+                              </div>
+                              <input 
+                                 type="number" 
+                                 value={empId}
+                                 onChange={(e) => setEmpId(e.target.value)}
+                                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-4.5 pl-14 pr-4 text-slate-800 font-bold focus:outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all font-outfit"
+                                 placeholder="Contoh: 15"
+                              />
+                           </div>
+                        </div>
+                     )}
 
                     <div className="space-y-3">
                        <label className="text-[10px] font-bold text-slate-400 tracking-[0.2em] uppercase ml-1 block text-center">6-Digit Access PIN</label>

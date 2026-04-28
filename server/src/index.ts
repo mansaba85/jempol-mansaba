@@ -49,12 +49,19 @@ app.post('/api/login', async (req, res) => {
 
 app.post('/api/login/employee', async (req, res) => {
   const { id, pin } = req.body;
-  const employee = await prisma.employee.findFirst({
-    where: { 
-      id: parseInt(String(id)),
-      pin: String(pin)
-    }
-  });
+  
+  let employee;
+  if (id) {
+    employee = await prisma.employee.findFirst({
+        where: { id: parseInt(String(id)), pin: String(pin) }
+    });
+  } else {
+    // Login hanya dengan PIN
+    employee = await prisma.employee.findUnique({
+        where: { pin: String(pin) }
+    });
+  }
+
   if (employee) {
     const token = jwt.sign(
       { id: employee.id, username: employee.name, role: 'EMPLOYEE' },
