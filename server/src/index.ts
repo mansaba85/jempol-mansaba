@@ -14,7 +14,7 @@ import jwt from 'jsonwebtoken';
 
 const upload = multer({ dest: 'uploads/' });
 const prisma = new PrismaClient();
-const port = 3001;
+const port = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'mansaba_super_secret_1985';
 
 const app = express();
