@@ -1390,7 +1390,10 @@ app.post('/api/settings/restore', upload.single('backup'), async (req: any, res:
 
 // --- SERVE FRONTEND (Untuk Produksi/CPanel) ---
 app.use(express.static(path.join(__dirname, '../../client/dist')));
-app.get('*', (req, res) => {
+// Middleware cadangan untuk menangani Refresh di SPA (Single Page Application)
+app.use((req, res, next) => {
+  // Hanya proses jika bukan request API
+  if (req.path.startsWith('/api')) return next();
   res.sendFile(path.join(__dirname, '../../client/dist/index.html'));
 });
 
