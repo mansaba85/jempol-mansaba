@@ -451,16 +451,18 @@ app.get('/api/logs', async (req, res) => {
 });
 
 app.post('/api/attendance/manual', async (req, res) => {
-  const { employeeId, date, time } = req.body;
+  const { employeeId, date, time, type } = req.body;
   // Pastikan jam menggunakan format HH:mm
   const timeStr = time.replace('.', ':');
   // Buat tanggal dalam konteks waktu lokal Indonesia (UTC+7)
   const timestamp = new Date(`${date}T${timeStr}:00+07:00`);
   
+  const checkType = type === 'IN' ? 'CHECK IN' : 'CHECK OUT';
+  
   await prisma.attendance.upsert({
     where: { employeeId_timestamp: { employeeId: parseInt(employeeId), timestamp } },
-    update: { isManual: true },
-    create: { employeeId: parseInt(employeeId), timestamp, type: 'CHECK', isManual: true }
+    update: { isManual: true, type: checkType },
+    create: { employeeId: parseInt(employeeId), timestamp, type: checkType, isManual: true }
   });
   res.json({ success: true });
 });
@@ -641,9 +643,11 @@ app.get('/api/machine/sync-all', async (req, res) => {
               }
           }
 
-          if (type) {
-              logsToSave.push({ employeeId: uid, timestamp: tapTime, type, deviceId: dev.id });
+          if (!type) {
+              const tapLocalHour = (tapTime.getUTCHours() + 7) % 24;
+              type = tapLocalHour < 12 ? 'CHECK IN' : 'CHECK OUT';
           }
+          logsToSave.push({ employeeId: uid, timestamp: tapTime, type, deviceId: dev.id });
         }
 
         if (logsToSave.length > 0) {
@@ -753,7 +757,11 @@ app.get('/api/machine/sync-one/:id', async (req, res) => {
             }
         }
 
-        if (type) logsToSave.push({ employeeId: uid, timestamp: tapTime, type, deviceId: devId });
+        if (!type) {
+            const tapLocalHour = (tapTime.getUTCHours() + 7) % 24;
+            type = tapLocalHour < 12 ? 'CHECK IN' : 'CHECK OUT';
+        }
+        logsToSave.push({ employeeId: uid, timestamp: tapTime, type, deviceId: devId });
     }
 
     if (logsToSave.length > 0) {

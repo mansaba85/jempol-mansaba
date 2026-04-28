@@ -292,17 +292,18 @@ const EmployeesPage = () => {
                <th className="mansaba-th text-center w-12 cursor-pointer" onClick={toggleAll}>
                   <i className={`fa-solid ${selectedIds.length > 0 && selectedIds.length === filteredEmployees.length ? 'fa-check-square text-blue-600 text-base' : 'fa-square text-slate-300 text-base hover:text-slate-400'}`}></i>
                </th>
-               <th className="mansaba-th text-center w-24">PIN</th>
-               <th className="mansaba-th">Pegawai</th>
-               <th className="mansaba-th text-center">Jabatan</th>
-               <th className="mansaba-th">Pola Shift</th>
-               <th className="mansaba-th text-right">Aksi</th>
+               <th className="mansaba-th text-center w-24">ID MESIN</th>
+               <th className="mansaba-th">PEGAWAI</th>
+               <th className="mansaba-th text-center w-32">PIN PORTAL</th>
+               <th className="mansaba-th text-center">JABATAN</th>
+               <th className="mansaba-th">POLA SHIFT</th>
+               <th className="mansaba-th text-right">AKSI</th>
                </tr>
             </thead>
             <tbody>
                {loading ? (
                   <tr>
-                     <td colSpan={6} className="text-center py-10">
+                     <td colSpan={7} className="text-center py-10">
                         <div className="flex flex-col items-center gap-2">
                            <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
                            <span className="text-sm text-slate-500">Memuat data...</span>
@@ -311,7 +312,7 @@ const EmployeesPage = () => {
                   </tr>
                ) : paginated.length === 0 ? (
                   <tr>
-                     <td colSpan={6} className="text-center py-10 text-slate-500">Data pegawai tidak ditemukan</td>
+                     <td colSpan={7} className="text-center py-10 text-slate-500">Data pegawai tidak ditemukan</td>
                   </tr>
                ) : paginated.map((emp) => (
                   <tr key={emp.id} className={`hover:bg-slate-50/80 transition-colors ${selectedIds.includes(emp.id) ? 'bg-blue-50/50' : ''}`}>
@@ -322,8 +323,18 @@ const EmployeesPage = () => {
                   <td className="mansaba-td">
                      <div className="flex flex-col">
                         <span className="font-bold text-slate-800">{emp.name}</span>
-                        <span className="text-xs text-slate-500 font-medium">NIP: {emp.nip || '-'} • Portal: {emp.pin ? 'Kunci Aktif' : 'Belum Atur'}</span>
+                        <span className="text-xs text-slate-500 font-medium">NIP: {emp.nip || '-'}</span>
                      </div>
+                  </td>
+                  <td className="mansaba-td text-center">
+                     {emp.pin ? (
+                        <div className="flex flex-col items-center">
+                           <span className="text-sm font-mono font-bold tracking-widest text-slate-700">{emp.pin}</span>
+                           <span className="text-[9px] text-emerald-500 font-bold uppercase mt-0.5">Aktif</span>
+                        </div>
+                     ) : (
+                        <span className="text-xs text-slate-400 italic">Belum Atur</span>
+                     )}
                   </td>
                   <td className="mansaba-td text-center">
                      <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${emp.role === 'GURU' ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-600'}`}>
