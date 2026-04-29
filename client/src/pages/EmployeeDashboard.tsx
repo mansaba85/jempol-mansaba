@@ -70,7 +70,7 @@ const EmployeeDashboard = () => {
         <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-blue-600/5 rounded-full blur-[100px] -mr-40 -mt-40"></div>
         <div className="absolute bottom-0 left-0 w-[300px] h-[300px] bg-emerald-600/5 rounded-full blur-[80px] -ml-20 -mb-20"></div>
         
-        <div className="max-w-6xl mx-auto px-8 pt-14 relative z-10">
+        <div className="w-full px-2 md:px-4 pt-14 relative z-10">
           <div className="flex items-center gap-5 mb-6">
              <div className="w-12 h-12 bg-white/5 backdrop-blur-xl rounded-xl flex items-center justify-center border border-white/10 shadow-lg">
                 {isHistoryView ? <History size={22} className="text-blue-400" /> : <TrendingUp size={22} className="text-emerald-400" />}
@@ -87,7 +87,7 @@ const EmployeeDashboard = () => {
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-8 -mt-16 space-y-6 relative z-20 pb-20">
+      <div className="w-full px-2 md:px-4 -mt-16 space-y-6 relative z-20 pb-20">
         
         {!isHistoryView ? (
            <>
@@ -222,6 +222,10 @@ const EmployeeDashboard = () => {
                     <div>
                        <h3 className="text-lg font-bold text-slate-800 tracking-tight">Detail Presensi Bulanan</h3>
                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mt-0.5">Filter riwayat per bulan</p>
+                       <div className="md:hidden flex items-center gap-1.5 mt-2 text-rose-600 animate-pulse">
+                          <ChevronRight size={10} />
+                          <span className="text-[8px] font-bold uppercase tracking-widest">Geser ke kanan untuk detail</span>
+                       </div>
                     </div>
                  </div>
                  
@@ -232,16 +236,16 @@ const EmployeeDashboard = () => {
                  </div>
               </div>
 
-              <div className="overflow-x-auto">
-                 <table className="w-full">
+              <div className="overflow-x-auto scrollbar-hide">
+                 <table className="border-collapse table-auto w-px min-w-0">
                     <thead>
                        <tr className="bg-slate-50/50">
-                          <th className="px-8 py-4 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Hari / Tanggal</th>
-                          <th className="px-8 py-4 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Scan In</th>
-                          <th className="px-8 py-4 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status In</th>
-                          <th className="px-8 py-4 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Scan Out</th>
-                          <th className="px-8 py-4 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status Out</th>
-                          <th className="px-8 py-4 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Jml TTP</th>
+                          <th className="px-1 py-3 text-left text-[9px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Hari / Tanggal</th>
+                          <th className="px-1 py-3 text-left text-[9px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Scan In</th>
+                          <th className="px-1 py-3 text-left text-[9px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Status In</th>
+                          <th className="px-1 py-3 text-left text-[9px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Scan Out</th>
+                          <th className="px-1 py-3 text-left text-[9px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Status Out</th>
+                          <th className="px-1 py-3 text-left text-[9px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Jml TTP</th>
                        </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
@@ -254,33 +258,33 @@ const EmployeeDashboard = () => {
                        ) : data?.days?.length > 0 ? (
                           data.days.map((d: any, idx: number) => (
                              <tr key={idx} className={`transition-colors ${idx % 2 === 1 ? 'bg-slate-50/50' : 'bg-white'} hover:bg-slate-100/50 ${isSameDay(new Date(d.date), today) ? 'bg-blue-50/40' : ''}`}>
-                                <td className="px-8 py-4">
+                                <td className="px-1 py-3 whitespace-nowrap">
                                    <div className="flex flex-col">
-                                      <span className="font-bold text-slate-700 text-sm">{format(new Date(d.date), 'EEEE', { locale: id })}</span>
-                                      <span className="text-[10px] font-medium text-slate-400 mt-0.5">{format(new Date(d.date), 'dd MMM yyyy')}</span>
-                                   </div>
+                                      <span className="font-bold text-slate-700 text-[11px]">{format(new Date(d.date), 'EEEE', { locale: id })}</span>
+                                      <span className="text-[8px] font-medium text-slate-400 mt-0.5">{format(new Date(d.date), 'dd MMM yyyy')}</span>
+                                    </div>
                                 </td>
-                                <td className="px-8 py-4 font-semibold text-slate-700 text-[15px] tabular-nums">{formatLogTime(d.logs?.in)}</td>
-                                <td className="px-8 py-4">
+                                <td className="px-1 py-3 font-semibold text-slate-700 text-[11px] tabular-nums whitespace-nowrap">{formatLogTime(d.logs?.in)}</td>
+                                <td className="px-1 py-3 whitespace-nowrap">
                                    {d.status === 'LIBUR' ? (
-                                      <span className="text-slate-300 font-medium italic text-[10px] uppercase tracking-wider">LIBUR</span>
+                                      <span className="text-slate-300 font-medium italic text-[8px] uppercase tracking-wider">LIBUR</span>
                                    ) : d.lateMinutes > 0 ? (
-                                      <span className="bg-rose-50 text-rose-600 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border border-rose-100">Telat {d.lateMinutes}m</span>
+                                      <span className="bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wide border border-rose-100">Telat {d.lateMinutes}m</span>
                                    ) : d.logs?.in ? (
-                                      <span className="bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border border-emerald-100">Tepat Waktu</span>
-                                   ) : <span className="text-slate-300">--</span>}
+                                      <span className="bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wide border border-emerald-100">Tepat</span>
+                                   ) : <span className="text-slate-300 text-[9px]">--</span>}
                                 </td>
-                                <td className="px-8 py-4 font-semibold text-slate-700 text-[15px] tabular-nums">{formatLogTime(d.logs?.out)}</td>
-                                <td className="px-8 py-4">
+                                <td className="px-1 py-3 font-semibold text-slate-700 text-[11px] tabular-nums whitespace-nowrap">{formatLogTime(d.logs?.out)}</td>
+                                <td className="px-1 py-3 whitespace-nowrap">
                                    {d.status === 'LIBUR' ? (
-                                      <span className="text-slate-300 font-medium italic text-[10px] uppercase tracking-wider">LIBUR</span>
+                                      <span className="text-slate-300 font-medium italic text-[8px] uppercase tracking-wider">LIBUR</span>
                                    ) : d.earlyMinutes > 0 ? (
-                                      <span className="bg-amber-50 text-amber-600 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border border-amber-100">Dini {d.earlyMinutes}m</span>
+                                      <span className="bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wide border border-amber-100">Dini {d.earlyMinutes}m</span>
                                    ) : d.logs?.out ? (
-                                      <span className="bg-blue-50 text-blue-600 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide border border-blue-100">Selesai</span>
-                                   ) : <span className="text-slate-300">--</span>}
+                                      <span className="bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wide border border-blue-100">OK</span>
+                                   ) : <span className="text-slate-300 text-[9px]">--</span>}
                                 </td>
-                                <td className="px-8 py-4 text-right font-bold text-slate-700 tabular-nums italic">
+                                <td className="px-1 py-3 font-bold text-slate-700 text-[11px] tabular-nums italic whitespace-nowrap">
                                    {d.ttpValue > 0 ? `Rp${new Intl.NumberFormat('id-ID').format(d.ttpValue)}` : '-'}
                                 </td>
                              </tr>
