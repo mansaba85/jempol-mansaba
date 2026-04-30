@@ -1397,13 +1397,17 @@ app.post('/api/settings/restore', upload.single('backup'), async (req: any, res:
   }
 });
 
-// --- SERVE FRONTEND (Untuk Produksi/CPanel) ---
-app.use(express.static(path.join(__dirname, '../../client/dist')));
+// --- SERVE FRONTEND (Untuk Produksi/Docker) ---
+const clientDistPath = path.resolve(__dirname, '../../client/dist');
+app.use(express.static(clientDistPath));
+
 // Middleware cadangan untuk menangani Refresh di SPA (Single Page Application)
-app.use((req, res, next) => {
-  // Hanya proses jika bukan request API
-  if (req.path.startsWith('/api')) return next();
-  res.sendFile(path.join(__dirname, '../../client/dist/index.html'));
+app.get('*', (req, res) => {
+  // Jika request dimulai dengan /api, jangan kirim index.html (biar error 404 asli)
+  if (req.path.startsWith('/api')) {
+    return res.status(404).json({ error: 'API route not found' });
+  }
+  res.sendFile(path.join(clientDistPath, 'index.html'));
 });
 
 app.listen(port, () => {
