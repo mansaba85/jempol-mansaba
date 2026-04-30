@@ -47,8 +47,8 @@ const AttendancePage = () => {
         </div>
       </header>
 
-      <div className="mansaba-card">
-        <form onSubmit={handleFilter} className="flex flex-col md:flex-row gap-4 mb-6">
+      <div className="mansaba-card p-4 md:p-6">
+        <form onSubmit={handleFilter} className="flex flex-col lg:flex-row gap-4 mb-6">
           <div className="flex-1 relative">
             <i className="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
             <input 
@@ -60,28 +60,36 @@ const AttendancePage = () => {
             />
           </div>
           
-          <div className="flex items-center gap-3">
-            <input 
-              type="date"
-              className="mansaba-input"
-              value={queryStart}
-              onChange={e => setQueryStart(e.target.value)}
-            />
-            <span className="text-slate-400 font-medium">s/d</span>
-            <input 
-              type="date"
-              className="mansaba-input"
-              value={queryEnd}
-              onChange={e => setQueryEnd(e.target.value)}
-            />
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
+            <div className="relative w-full sm:w-40">
+              <input 
+                type="date"
+                className="mansaba-input w-full !pr-2"
+                value={queryStart}
+                onChange={e => setQueryStart(e.target.value)}
+              />
+            </div>
+            <span className="text-slate-400 font-bold text-xs uppercase hidden sm:block">s/d</span>
+            <div className="relative w-full sm:w-40">
+              <input 
+                type="date"
+                className="mansaba-input w-full !pr-2"
+                value={queryEnd}
+                onChange={e => setQueryEnd(e.target.value)}
+              />
+            </div>
           </div>
           
-          <button type="submit" className="mansaba-btn-primary px-6" disabled={loading}>
+          <button type="submit" className="mansaba-btn-primary px-8 w-full lg:w-auto" disabled={loading}>
             <i className="fa-solid fa-filter mr-2"></i> Filter
           </button>
         </form>
 
-        <div className="overflow-x-auto border border-slate-200 rounded-xl">
+        <div className="md:hidden flex items-center gap-1.5 px-4 py-2 border border-slate-100 rounded-t-xl text-rose-600 animate-pulse bg-rose-50/30">
+          <i className="fa-solid fa-angles-right text-[10px]"></i>
+          <span className="text-[10px] font-bold uppercase tracking-widest">Geser untuk detail log</span>
+        </div>
+        <div className="overflow-x-auto border border-slate-200 rounded-xl md:rounded-t-none">
           <table className="mansaba-table">
             <thead>
               <tr>

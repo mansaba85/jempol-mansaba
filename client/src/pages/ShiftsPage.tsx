@@ -254,7 +254,12 @@ const ShiftsPage = () => {
                           </div>
                        </div>
                        
-                       <table className="mansaba-table !mt-0 !mb-0 !border-0 rounded-none shadow-none">
+                       <div className="md:hidden flex items-center gap-1.5 px-4 py-2 border-b border-slate-100 text-rose-600 animate-pulse bg-rose-50/30">
+                          <i className="fa-solid fa-angles-right text-[10px]"></i>
+                          <span className="text-[10px] font-bold uppercase tracking-widest">Geser tabel ke samping</span>
+                       </div>
+                       <div className="overflow-x-auto">
+                          <table className="mansaba-table !mt-0 !mb-0 !border-0 rounded-none shadow-none">
                           <thead>
                              <tr>
                                 <th className="mansaba-th">Nama Shift</th>
@@ -294,6 +299,7 @@ const ShiftsPage = () => {
                              )}
                           </tbody>
                        </table>
+                       </div>
                     </div>
                   ))}
                 </div>

@@ -185,6 +185,11 @@ const TimetablesPage = () => {
         </div>
       ) : (
         <div className="mansaba-card-no-pad">
+          <div className="md:hidden flex items-center gap-1.5 px-4 py-2 border-b border-slate-100 text-rose-600 animate-pulse bg-rose-50/30">
+            <i className="fa-solid fa-angles-right text-[10px]"></i>
+            <span className="text-[10px] font-bold uppercase tracking-widest">Geser ke samping untuk melihat jam</span>
+          </div>
+          <div className="overflow-x-auto">
           <table className="mansaba-table">
             <thead>
               <tr>
@@ -255,6 +260,7 @@ const TimetablesPage = () => {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

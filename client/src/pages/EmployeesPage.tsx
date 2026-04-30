@@ -191,48 +191,52 @@ const EmployeesPage = () => {
            <p className="text-sm text-slate-500 mt-1">Kelola data presensi, NIP, penjadwalan, dan jabatan pegawai.</p>
         </div>
         
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3">
            {selectedIds.length > 0 && (
-             <div className="flex items-center gap-2 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
-               <span className="text-sm font-medium text-blue-700 mr-2">{selectedIds.length} data terpilih</span>
-               <button 
-                 onClick={() => {
-                   setRosterForm({patternId: '', startDate: format(new Date(), 'yyyy-MM-dd')});
-                   setIsBulkModalOpen(true);
-                 }}
-                 className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-md transition-colors"
-               >
-                 <i className="fa-solid fa-calendar-alt mr-1.5"></i> Plotting Masal
-               </button>
-               <button 
-                 onClick={() => setBulkDeleteActive(true)}
-                 className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-md transition-colors"
-               >
-                 <i className="fa-solid fa-trash mr-1.5"></i> Hapus
-               </button>
+             <div className="flex flex-wrap items-center gap-2 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 w-full sm:w-auto">
+               <span className="text-xs font-bold text-blue-700 mr-1">{selectedIds.length} terpilih</span>
+               <div className="flex items-center gap-2">
+                 <button 
+                   onClick={() => {
+                     setRosterForm({patternId: '', startDate: format(new Date(), 'yyyy-MM-dd')});
+                     setIsBulkModalOpen(true);
+                   }}
+                   className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold rounded-md transition-colors whitespace-nowrap"
+                 >
+                   <i className="fa-solid fa-calendar-alt mr-1"></i> Plotting
+                 </button>
+                 <button 
+                   onClick={() => setBulkDeleteActive(true)}
+                   className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold rounded-md transition-colors whitespace-nowrap"
+                 >
+                   <i className="fa-solid fa-trash mr-1"></i> Hapus
+                 </button>
+               </div>
              </div>
            )}
 
-           <div className="hidden lg:flex flex-col items-end mr-4">
-              <span className="text-xs text-slate-500 mb-1">Total Pegawai</span>
-              <span className="text-lg font-semibold text-slate-800">{employees.length} <span className="text-xs font-normal text-slate-500">Orang</span></span>
+           <div className="hidden xl:flex flex-col items-end mr-2">
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-tighter">Total Pegawai</span>
+              <span className="text-base font-bold text-slate-800">{employees.length} <span className="text-[10px] font-normal text-slate-500">Orang</span></span>
            </div>
            
-           <button 
-             onClick={handleSyncEmployees}
-             disabled={isSyncing}
-             className="px-4 py-2.5 bg-white border border-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-50 transition-all flex items-center gap-2 disabled:opacity-50"
-           >
-             <i className={`fa-solid fa-rotate ${isSyncing ? 'fa-spin' : ''}`}></i>
-             {isSyncing ? 'Proses...' : 'Sinkron Mesin'}
-           </button>
+           <div className="flex items-center gap-2 w-full sm:w-auto">
+             <button 
+               onClick={handleSyncEmployees}
+               disabled={isSyncing}
+               className="flex-1 sm:flex-none px-4 py-2.5 bg-white border border-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-50 transition-all flex items-center justify-center gap-2 disabled:opacity-50 text-sm shadow-sm"
+             >
+               <i className={`fa-solid fa-rotate ${isSyncing ? 'fa-spin' : ''}`}></i>
+               {isSyncing ? '...' : 'Sync'}
+             </button>
 
-           <button 
-             onClick={() => { setEditingId(null); setForm({id: '', name:'', nip:'', role:'GURU', transportRate:0, pin: ''}); setIsModalOpen(true); }}
-             className="mansaba-btn-primary"
-           >
-             <i className="fa-solid fa-plus"></i> Tambah Pegawai
-           </button>
+             <button 
+               onClick={() => { setEditingId(null); setForm({id: '', name:'', nip:'', role:'GURU', transportRate:0, pin: ''}); setIsModalOpen(true); }}
+               className="flex-1 sm:flex-none mansaba-btn-primary !py-2.5 shadow-lg shadow-blue-600/20"
+             >
+               <i className="fa-solid fa-plus"></i> <span className="hidden sm:inline">Tambah</span> Pegawai
+             </button>
+           </div>
         </div>
       </div>
 
@@ -261,30 +265,35 @@ const EmployeesPage = () => {
             />
          </div>
          
-         <div className="flex items-center gap-4 w-full md:w-auto">
-            <div className="flex items-center gap-2">
-               <span className="text-sm text-slate-500">Urutkan:</span>
-               <select className="mansaba-input !py-1.5 w-auto" value={sortField} onChange={e => handleSort(e.target.value)}>
-                  <option value="id">PIN Mesin</option>
-                  <option value="name">Nama Pegawai</option>
-                  <option value="role">Jabatan</option>
-               </select>
-            </div>
-            <div className="flex items-center gap-2">
-               <span className="text-sm text-slate-500">Tampil:</span>
-               <select className="mansaba-input !py-1.5 w-auto" value={itemsPerPage} onChange={e => {setItemsPerPage(e.target.value as any); setCurrentPage(1);}}>
-                  <option value={10}>10</option>
-                  <option value={20}>20</option>
-                  <option value={50}>50</option>
-                  <option value="all">Semua</option>
-               </select>
-            </div>
-         </div>
+          <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
+             <div className="flex items-center gap-2 flex-1 sm:flex-none">
+                <span className="text-xs text-slate-500 font-bold uppercase tracking-tighter">Urut:</span>
+                <select className="mansaba-input !py-1.5 w-full sm:w-auto text-xs" value={sortField} onChange={e => handleSort(e.target.value)}>
+                   <option value="id">ID MESIN</option>
+                   <option value="name">NAMA</option>
+                   <option value="role">JABATAN</option>
+                </select>
+             </div>
+             <div className="flex items-center gap-2 flex-1 sm:flex-none">
+                <span className="text-xs text-slate-500 font-bold uppercase tracking-tighter">Limit:</span>
+                <select className="mansaba-input !py-1.5 w-full sm:w-auto text-xs" value={itemsPerPage} onChange={e => {setItemsPerPage(e.target.value as any); setCurrentPage(1);}}>
+                   <option value={10}>10</option>
+                   <option value={20}>20</option>
+                   <option value={50}>50</option>
+                   <option value="all">ALL</option>
+                </select>
+             </div>
+          </div>
       </div>
 
       {/* DATA TABLE */}
       <div className="mansaba-card-no-pad">
-         <table className="mansaba-table">
+         <div className="md:hidden flex items-center gap-1.5 px-4 py-2 border-b border-slate-100 text-rose-600 animate-pulse bg-rose-50/30">
+            <i className="fa-solid fa-angles-right text-[10px]"></i>
+            <span className="text-[10px] font-bold uppercase tracking-widest">Geser tabel ke samping untuk melihat detail</span>
+         </div>
+         <div className="overflow-x-auto">
+            <table className="mansaba-table">
             <thead>
                <tr>
                <th className="mansaba-th text-center w-12 cursor-pointer" onClick={toggleAll}>
@@ -382,6 +391,7 @@ const EmployeesPage = () => {
                ))}
             </tbody>
          </table>
+         </div>
       </div>
 
       {/* PAGINATION */}
