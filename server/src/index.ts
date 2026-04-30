@@ -1410,8 +1410,8 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(clientDistPath, 'index.html'));
 });
 
-app.listen(port, () => {
-  console.log(`🚀 Server ready at http://localhost:${port}`);
+app.listen(port, '0.0.0.0', () => {
+  console.log(`🚀 Server ready at http://0.0.0.0:${port}`);
 });
 
 // --- AUTO SYNC BACKGROUND TASK (EVERY SHARP HOUR) ---
