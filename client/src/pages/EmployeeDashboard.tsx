@@ -11,22 +11,17 @@ import {
   UserCheck,
   ChevronRight, 
   ChevronLeft,
-  CheckCircle2,
   RefreshCcw,
-  TrendingUp,
   History,
-  FileText,
-  Home,
   LayoutGrid,
   Bell,
-  Fingerprint,
-  ArrowRightLeft
+  Fingerprint
 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, isSameDay } from 'date-fns';
 import { id } from 'date-fns/locale';
 
 const EmployeeDashboard = () => {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [data, setData] = useState<any>(null);

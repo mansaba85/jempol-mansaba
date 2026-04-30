@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
-import { Fingerprint, Lock, User, Eye, EyeOff, Loader2, Users, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { Fingerprint, Lock, User, Eye, EyeOff, Loader2, Users, ShieldCheck } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 
 const LoginPage = () => {
