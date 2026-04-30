@@ -104,8 +104,12 @@ const authenticateToken = (req: any, res: any, next: any) => {
   });
 };
 
-// APPLY PROTECTION TO ALL ROUTES BELOW THIS LINE
-app.use(authenticateToken);
+// HANYA LINDUNGI JALUR /api (Kecuali Login & Public)
+app.use('/api', (req: any, res: any, next: any) => {
+  const publicRoutes = ['/login', '/login/employee', '/settings/public'];
+  if (publicRoutes.includes(req.path)) return next();
+  authenticateToken(req, res, next);
+});
 
 // Auto-seed Initial Admin
 const seedAdmin = async () => {
