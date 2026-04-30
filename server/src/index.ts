@@ -1401,9 +1401,14 @@ app.post('/api/settings/restore', upload.single('backup'), async (req: any, res:
 const clientDistPath = path.resolve(__dirname, '../../client/dist');
 app.use(express.static(clientDistPath));
 
+// --- SERVE FRONTEND (Untuk Produksi/Docker) ---
+const clientDistPath = path.resolve(__dirname, '../../client/dist');
+app.use(express.static(clientDistPath));
+
 // Middleware cadangan untuk menangani Refresh di SPA (Single Page Application)
-// Di Express 5, kita gunakan sintaks catch-all yang baru
-app.get('/:path*', (req, res) => {
+// Tanpa menggunakan simbol bintang (*) agar kompatibel dengan Express 5
+app.use((req, res) => {
+  // Jika request dimulai dengan /api, jangan kirim index.html (biar error 404 asli)
   if (req.path.startsWith('/api')) {
     return res.status(404).json({ error: 'API route not found' });
   }
