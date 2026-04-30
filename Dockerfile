@@ -19,9 +19,10 @@ RUN npm run build
 # Stage 3: Production Environment
 FROM node:22-alpine
 ENV NODE_ENV=production
+ENV TZ=Asia/Jakarta
 
-# Install OpenSSL for Prisma Client
-RUN apk add --no-cache openssl
+# Install OpenSSL and tzdata
+RUN apk add --no-cache openssl tzdata
 
 # Setup Server Dir
 WORKDIR /app/server
