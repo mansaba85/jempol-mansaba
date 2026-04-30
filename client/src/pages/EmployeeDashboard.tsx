@@ -1,31 +1,48 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { 
   Calendar, 
   Clock, 
   LogOut, 
+  LogIn,
+  CalendarDays,
+  UserCheck,
   ChevronRight, 
   ChevronLeft,
   CheckCircle2,
-  Hash,
   RefreshCcw,
   TrendingUp,
   History,
-  FileText
+  FileText,
+  Home,
+  LayoutGrid,
+  Bell,
+  Fingerprint,
+  ArrowRightLeft
 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, isSameDay } from 'date-fns';
 import { id } from 'date-fns/locale';
 
 const EmployeeDashboard = () => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [currentTime, setCurrentTime] = useState(new Date());
 
   const isHistoryView = location.pathname === '/history';
+
+  // Digital Clock
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     fetchData();
@@ -53,7 +70,6 @@ const EmployeeDashboard = () => {
     setCurrentMonth(next);
   };
 
-  // Cari data hari ini untuk header
   const today = new Date();
   const todayData = data?.days?.find((d: any) => isSameDay(new Date(d.date), today));
 
@@ -62,264 +78,223 @@ const EmployeeDashboard = () => {
     return format(new Date(timeStr), 'HH:mm');
   };
 
+  const performancePercent = data?.summary?.totalDaysInPeriod > 0 
+    ? Math.round((data.summary.totalDays / data.summary.totalDaysInPeriod) * 100) 
+    : 0;
+
+  if (isHistoryView) {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] pb-24">
+        {/* Header Arsip */}
+        <div className="bg-emerald-500 pt-12 pb-20 px-6 rounded-b-[3rem] shadow-lg shadow-emerald-500/20">
+           <div className="flex items-center gap-4 mb-6">
+              <button onClick={() => navigate('/')} className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center text-white">
+                 <ChevronLeft />
+              </button>
+              <h1 className="text-xl font-bold text-white tracking-tight">Riwayat Presensi</h1>
+           </div>
+           
+           <div className="flex items-center justify-between bg-white/20 backdrop-blur-md p-2 rounded-2xl border border-white/20">
+              <button onClick={() => changeMonth(-1)} className="w-10 h-10 flex items-center justify-center text-white hover:bg-white/10 rounded-xl"><ChevronLeft size={20}/></button>
+              <span className="text-sm font-bold text-white uppercase tracking-widest">{format(currentMonth, 'MMMM yyyy', { locale: id })}</span>
+              <button onClick={() => changeMonth(1)} className="w-10 h-10 flex items-center justify-center text-white hover:bg-white/10 rounded-xl"><ChevronRight size={20}/></button>
+           </div>
+        </div>
+
+        <div className="px-4 -mt-10 space-y-4">
+           {loading ? (
+             <div className="flex justify-center py-20">
+                <RefreshCcw className="animate-spin text-emerald-500" size={32} />
+             </div>
+           ) : data?.days?.length > 0 ? (
+             data.days.map((d: any, idx: number) => (
+               <div key={idx} className={`bg-white p-4 rounded-2xl shadow-sm border border-slate-100 ${isSameDay(new Date(d.date), today) ? 'ring-2 ring-emerald-500 ring-offset-2' : ''}`}>
+                  {/* Compact Card Header */}
+                  <div className="flex items-center justify-between mb-2.5 border-b border-slate-50 pb-2">
+                     <div className="flex items-center gap-3">
+                        <div className={`w-9 h-9 rounded-lg flex flex-col items-center justify-center ${d.status === 'LIBUR' ? 'bg-slate-50 text-slate-400' : 'bg-emerald-50 text-emerald-600'}`}>
+                           <span className="text-[7px] font-black uppercase leading-none">{format(new Date(d.date), 'EEE', { locale: id })}</span>
+                           <span className="text-sm font-black leading-none mt-0.5">{format(new Date(d.date), 'dd')}</span>
+                        </div>
+                        <div>
+                           <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{format(new Date(d.date), 'MMMM yyyy', { locale: id })}</h4>
+                           {d.status === 'LIBUR' && <span className="text-[7px] font-black bg-slate-100 text-slate-500 px-1 py-0.5 rounded-full uppercase mt-0.5 inline-block">Libur</span>}
+                        </div>
+                     </div>
+                     <div className="text-right">
+                        <span className="text-[7px] font-black text-slate-300 uppercase tracking-widest block leading-none mb-0.5">Honor Transport</span>
+                        <span className="text-xs font-black text-emerald-600 tabular-nums leading-none">
+                           {d.ttpValue > 0 ? `+Rp${new Intl.NumberFormat('id-ID').format(d.ttpValue)}` : 'Rp 0'}
+                        </span>
+                     </div>
+                  </div>
+
+                  {/* Compact Attendance Details */}
+                  <div className="grid grid-cols-2 gap-4 relative">
+                     <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-50/50 -translate-x-1/2"></div>
+                     
+                     <div className="space-y-1">
+                        <div className="flex items-center gap-1">
+                           <LogIn size={9} className="text-blue-500" />
+                           <p className="text-[7px] font-black text-slate-400 uppercase tracking-wider">Masuk</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                           <span className="text-sm font-black text-slate-700 tabular-nums">{formatLogTime(d.logs?.in)}</span>
+                           <span className={`text-[7px] font-bold px-1 py-0.5 rounded-md ${d.lateMinutes > 0 ? 'bg-rose-50 text-rose-500' : d.logs?.in ? 'bg-emerald-50 text-emerald-500' : 'bg-slate-50 text-slate-400'}`}>
+                              {d.lateMinutes > 0 ? `Telat ${d.lateMinutes}m` : d.logs?.in ? 'Tepat' : 'Tap'}
+                           </span>
+                        </div>
+                     </div>
+
+                     <div className="space-y-1 text-right flex flex-col items-end">
+                        <div className="flex items-center gap-1">
+                           <p className="text-[7px] font-black text-slate-400 uppercase tracking-wider">Pulang</p>
+                           <LogOut size={9} className="text-emerald-500" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                           <span className={`text-[7px] font-bold px-1 py-0.5 rounded-md ${d.earlyMinutes > 0 ? 'bg-amber-50 text-amber-500' : d.logs?.out ? 'bg-emerald-50 text-emerald-500' : 'bg-slate-50 text-slate-400'}`}>
+                              {d.earlyMinutes > 0 ? `Dini ${d.earlyMinutes}m` : d.logs?.out ? 'Tepat' : 'Tap'}
+                           </span>
+                           <span className="text-sm font-black text-slate-700 tabular-nums">{formatLogTime(d.logs?.out)}</span>
+                        </div>
+                     </div>
+                  </div>
+               </div>
+             ))
+           ) : (
+             <div className="text-center py-20 text-slate-400 font-medium italic">Tidak ada data</div>
+           )}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-[#fcfdfe] font-['Open_Sans'] text-slate-700">
-      
-      {/* HEADER SECTION */}
-      <div className="bg-[#0f172a] text-white relative h-56 overflow-hidden">
-        <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-blue-600/5 rounded-full blur-[100px] -mr-40 -mt-40"></div>
-        <div className="absolute bottom-0 left-0 w-[300px] h-[300px] bg-emerald-600/5 rounded-full blur-[80px] -ml-20 -mb-20"></div>
-        
-        <div className="w-full px-2 md:px-4 pt-14 relative z-10">
-          <div className="flex items-center gap-5 mb-6">
-             <div className="w-12 h-12 bg-white/5 backdrop-blur-xl rounded-xl flex items-center justify-center border border-white/10 shadow-lg">
-                {isHistoryView ? <History size={22} className="text-blue-400" /> : <TrendingUp size={22} className="text-emerald-400" />}
+    <div className="min-h-screen bg-[#f8fafc] font-outfit pb-24">
+      {/* ULTRA COMPACT EMERALD HEADER */}
+      <div className="bg-[#2ecc71] pt-6 pb-20 px-6 relative overflow-hidden rounded-b-[3.5rem] shadow-lg">
+        {/* Abstract Shapes */}
+        <div className="absolute top-[-10%] right-[-5%] w-48 h-48 bg-white/10 rounded-full blur-2xl"></div>
+        <div className="absolute bottom-0 right-10 opacity-10">
+           <div className="w-32 h-32 rounded-full border-8 border-white"></div>
+        </div>
+
+        {/* Top Branding */}
+        <div className="relative z-10 flex items-center gap-2 mb-6">
+           <Fingerprint size={24} className="text-white opacity-90" />
+           <span className="text-white font-black text-sm tracking-widest uppercase">Jariku Mansaba</span>
+        </div>
+
+        {/* User Greeting & Clock Area */}
+        <div className="relative z-10 flex flex-col items-center">
+          <div className="text-center">
+             <p className="text-white/80 text-[11px] font-bold">Selamat Datang,</p>
+             <h1 className="text-2xl font-black text-white mt-0.5 tracking-tight">{user?.username || 'Pegawai'}</h1>
+          </div>
+          
+          <div className="mt-4 flex flex-col items-center">
+             <div className="flex items-center gap-3">
+                <Bell size={18} className="text-white opacity-80" />
+                <h2 className="text-5xl font-black text-white tabular-nums tracking-tighter drop-shadow-sm">
+                   {format(currentTime, 'HH:mm:ss')}
+                </h2>
              </div>
-             <div>
-                <h1 className="text-xl font-bold tracking-tight">
-                   {isHistoryView ? 'Arsip Riwayat Presensi' : `Selamat Datang, ${data?.employee?.name || 'Loading...'}`}
-                </h1>
-                <p className="text-slate-400 text-[11px] font-medium uppercase tracking-[0.15em] mt-1 opacity-80">
-                   {!isHistoryView ? format(new Date(), 'EEEE, dd MMMM yyyy', { locale: id }) : 'Pantau detail kehadiran bulanan Anda'}
-                </p>
-             </div>
+             <p className="mt-1 text-white/80 text-[10px] font-bold">
+                {format(currentTime, 'EEEE, dd MMMM yyyy', { locale: id })}
+             </p>
           </div>
         </div>
       </div>
 
-      <div className="w-full px-2 md:px-4 -mt-16 space-y-6 relative z-20 pb-20">
-        
-        {!isHistoryView ? (
-           <>
-             {/* TODAY'S STATUS BAR */}
-             <div className="space-y-4">
-                {/* JAM JADWAL - Full Width */}
-                <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex items-center justify-between">
-                   <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-blue-50 text-blue-500 rounded-xl flex items-center justify-center shadow-sm">
-                         <Clock size={20} />
-                      </div>
-                      <div className="flex flex-col">
-                         <span className="text-[9px] font-bold tracking-widest text-slate-400 uppercase">Jadwal Hari Ini</span>
-                         <h3 className="text-lg font-bold text-slate-800 tracking-tight leading-none mt-0.5">
-                            {todayData?.timetable ? `${todayData.timetable.jamMasuk} - ${todayData.timetable.jamPulang}` : 'LIBUR'}
-                         </h3>
-                      </div>
-                   </div>
-                   <div className="text-right">
-                      <span className="text-[10px] text-blue-600 font-semibold uppercase tracking-wide bg-blue-50 px-2 py-1 rounded-md">{todayData?.timetable?.name || 'TIDAK ADA JADWAL'}</span>
-                   </div>
-                </div>
+      {/* COMPACT SCHEDULE CARD */}
+      <div className="px-5 -mt-12 relative z-20">
+         <div className="bg-white rounded-[2rem] p-4 shadow-xl shadow-slate-200/60 border border-slate-100 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+               <div className="w-10 h-10 bg-indigo-50 text-indigo-500 rounded-xl flex items-center justify-center">
+                  <Clock size={22} />
+               </div>
+               <div>
+                  <h4 className="text-[9px] font-black text-rose-500 uppercase tracking-widest leading-none mb-0.5">Jadwal Hari Ini</h4>
+                  <p className="text-xl font-black text-slate-800 tracking-tight">
+                     {todayData?.timetable ? `${todayData.timetable.jamMasuk} - ${todayData.timetable.jamPulang}` : 'OFF'}
+                  </p>
+               </div>
+            </div>
+            <div className="bg-indigo-100 text-indigo-700 px-4 py-2 rounded-xl border border-indigo-200">
+               <span className="text-[10px] font-black uppercase tracking-tight">
+                  {todayData?.timetable?.name?.includes('-') ? todayData.timetable.name : 'SENIN - KAMIS'}
+               </span>
+            </div>
+         </div>
+      </div>
 
-                {/* SCAN LOGS - Side by Side */}
-                <div className="grid grid-cols-2 gap-4">
-                   <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex flex-col justify-between">
-                      <div className="flex items-center gap-2 mb-3">
-                         <div className="w-7 h-7 bg-emerald-50 text-emerald-500 rounded-lg flex items-center justify-center shadow-sm">
-                            <CheckCircle2 size={14} />
-                         </div>
-                         <span className="text-[9px] font-bold tracking-widest text-slate-400 uppercase">Scan Masuk</span>
-                      </div>
-                      <div>
-                         <h3 className="text-xl font-bold text-slate-800 tracking-tight">
-                            {formatLogTime(todayData?.logs?.in)}
-                         </h3>
-                         <div className="mt-1 text-[9px] font-bold uppercase truncate">
-                            {todayData?.lateMinutes > 0 ? (
-                               <span className="text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded">Telat {todayData.lateMinutes}m</span>
-                            ) : todayData?.logs?.in ? (
-                               <span className="text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Tepat Waktu</span>
-                            ) : (
-                               <span className="text-slate-300 italic font-medium">Belum Tap</span>
-                            )}
-                         </div>
-                      </div>
-                   </div>
+      {/* REFINED STATS GRID */}
+      <div className="px-5 mt-6 space-y-4">
+         <div className="grid grid-cols-2 gap-3">
+            {/* SCAN MASUK */}
+            <div className="bg-gradient-to-br from-[#54a0ff] to-[#2e86de] p-4 rounded-[1.5rem] text-white shadow-md relative overflow-hidden group">
+               <div className="w-9 h-9 bg-white/20 rounded-lg flex items-center justify-center mb-3">
+                  <LogIn size={18} strokeWidth={2.5} />
+               </div>
+               <h4 className="text-[10px] font-bold uppercase tracking-wider opacity-80 mb-0.5">Scan Masuk</h4>
+               <h3 className="text-2xl font-black tabular-nums tracking-tight">{formatLogTime(todayData?.logs?.in)}</h3>
+               <div className="mt-1.5 text-[8px] font-bold uppercase bg-white/20 px-2 py-0.5 rounded-md inline-block">
+                  {todayData?.lateMinutes > 0 ? `Telat ${todayData.lateMinutes}m` : todayData?.logs?.in ? 'Tepat Waktu' : 'Belum Tap'}
+               </div>
+            </div>
 
-                   <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex flex-col justify-between">
-                      <div className="flex items-center gap-2 mb-3">
-                         <div className="w-7 h-7 bg-amber-50 text-amber-500 rounded-lg flex items-center justify-center shadow-sm">
-                            <LogOut size={14} className="rotate-180" />
-                         </div>
-                         <span className="text-[9px] font-bold tracking-widest text-slate-400 uppercase">Scan Pulang</span>
-                      </div>
-                      <div>
-                         <h3 className="text-xl font-bold text-slate-800 tracking-tight">
-                            {formatLogTime(todayData?.logs?.out)}
-                         </h3>
-                         <div className="mt-1 text-[9px] font-bold uppercase truncate">
-                            {todayData?.earlyMinutes > 0 ? (
-                               <span className="text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Dini {todayData.earlyMinutes}m</span>
-                            ) : todayData?.logs?.out ? (
-                               <span className="text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Sudah Pulang</span>
-                            ) : (
-                               <span className="text-slate-300 italic font-medium">Belum Tap</span>
-                            )}
-                         </div>
-                      </div>
-                   </div>
-                </div>
-             </div>
+            {/* SCAN PULANG */}
+            <div className="bg-gradient-to-br from-[#2ecc71] to-[#27ae60] p-4 rounded-[1.5rem] text-white shadow-md relative overflow-hidden group">
+               <div className="w-9 h-9 bg-white/20 rounded-lg flex items-center justify-center mb-3">
+                  <LogOut size={18} strokeWidth={2.5} />
+               </div>
+               <h4 className="text-[10px] font-bold uppercase tracking-wider opacity-80 mb-0.5">Scan Pulang</h4>
+               <h3 className="text-2xl font-black tabular-nums tracking-tight">{formatLogTime(todayData?.logs?.out)}</h3>
+               <div className="mt-1.5 text-[8px] font-bold uppercase bg-white/20 px-2 py-0.5 rounded-md inline-block">
+                  {todayData?.earlyMinutes > 0 ? `Dini ${todayData.earlyMinutes}m` : todayData?.logs?.out ? 'Sudah Pulang' : 'Belum Pulang'}
+               </div>
+            </div>
 
-             {/* STATS SUMMARY */}
-             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm col-span-1">
-                   <h4 className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Hari Aktif</h4>
-                   <div className="flex items-baseline gap-1">
-                      <span className="text-2xl font-bold text-slate-800">{data?.summary?.totalDaysInPeriod || 0}</span>
-                      <span className="text-[9px] font-semibold text-slate-400 uppercase">Hari</span>
-                   </div>
-                </div>
-                <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm col-span-1">
-                   <h4 className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Jumlah Hadir</h4>
-                   <div className="flex items-baseline gap-1">
-                      <span className="text-2xl font-bold text-emerald-600">{data?.summary?.totalDays || 0}</span>
-                      <span className="text-[9px] font-semibold text-slate-400 uppercase">Hadir</span>
-                   </div>
-                </div>
-                <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm col-span-2 md:col-span-1">
-                   <h4 className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Performa Kehadiran</h4>
-                   <div className="flex items-baseline gap-2">
-                      <span className="text-2xl font-bold text-blue-600">
-                         {data?.summary?.totalDaysInPeriod > 0 
-                           ? Math.round((data.summary.totalDays / data.summary.totalDaysInPeriod) * 100) 
-                           : 0}%
-                      </span>
-                      <span className="text-[9px] font-semibold text-slate-400 uppercase">Persentase</span>
-                   </div>
-                </div>
-             </div>
-             
-             {/* HONOR RECAP */}
-             <div className="bg-[#0f172a] rounded-3xl p-8 flex flex-col md:flex-row items-center justify-between shadow-xl shadow-slate-900/10">
-                <div className="flex items-center gap-5 mb-5 md:mb-0">
-                   <div className="w-14 h-14 bg-white/10 rounded-2xl flex items-center justify-center">
-                      <FileText size={28} className="text-emerald-400" />
-                   </div>
-                   <div>
-                      <h3 className="text-lg font-bold text-white leading-tight">Akumulasi Honor Transport</h3>
-                      <p className="text-emerald-400/70 text-[11px] font-medium uppercase tracking-widest mt-1">Estimasi bulan {format(currentMonth, 'MMMM', { locale: id })}</p>
-                   </div>
-                </div>
-                <div className="text-center md:text-right">
-                   <div className="flex flex-col items-end">
-                      <span className="text-3xl font-bold text-emerald-400 tabular-nums">Rp {new Intl.NumberFormat('id-ID').format(data?.summary?.netto || 0)}</span>
-                      {data?.summary?.voucherNominal > 0 && (
-                         <span className="text-[10px] text-white/40 font-medium">Sudah potong voucher Rp{new Intl.NumberFormat('id-ID').format(data.summary.voucherNominal)}</span>
-                      )}
-                   </div>
-                </div>
-             </div>
-           </>
-        ) : (
-           /* HISTORY VIEW */
-           <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
-              <div className="p-7 border-b border-slate-50 flex flex-col md:flex-row items-center justify-between gap-6">
-                 <div className="flex items-center gap-4">
-                    <div className="w-11 h-11 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center shadow-sm">
-                       <Calendar size={22} />
-                    </div>
-                    <div>
-                       <h3 className="text-lg font-bold text-slate-800 tracking-tight">Detail Presensi Bulanan</h3>
-                       <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mt-0.5">Filter riwayat per bulan</p>
-                       <div className="md:hidden flex items-center gap-1.5 mt-2 text-rose-600 animate-pulse">
-                          <ChevronRight size={10} />
-                          <span className="text-[8px] font-bold uppercase tracking-widest">Geser ke kanan untuk detail</span>
-                       </div>
-                    </div>
-                 </div>
-                 
-                 <div className="flex items-center bg-slate-50 p-1.5 rounded-xl border border-slate-200/50">
-                    <button onClick={() => changeMonth(-1)} className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-white rounded-lg transition-all shadow-none hover:shadow-sm"><ChevronLeft size={18}/></button>
-                    <span className="px-5 text-[11px] font-bold text-slate-600 uppercase tracking-widest">{format(currentMonth, 'MMMM yyyy', { locale: id })}</span>
-                    <button onClick={() => changeMonth(1)} className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-white rounded-lg transition-all shadow-none hover:shadow-sm"><ChevronRight size={18}/></button>
-                 </div>
-              </div>
+            {/* HARI AKTIF */}
+            <div className="bg-gradient-to-br from-[#54a0ff] to-[#2e86de] p-4 rounded-[1.5rem] text-white shadow-md relative overflow-hidden">
+               <div className="w-9 h-9 bg-white/20 rounded-lg flex items-center justify-center mb-3">
+                  <CalendarDays size={18} strokeWidth={2.5} />
+               </div>
+               <h4 className="text-[10px] font-bold uppercase tracking-wider opacity-80 mb-0.5">Hari Aktif</h4>
+               <div className="flex items-baseline gap-1.5">
+                  <h3 className="text-2xl font-black tabular-nums tracking-tight">{data?.summary?.totalDaysInPeriod || 0}</h3>
+                  <span className="text-[10px] font-bold uppercase opacity-60">Hari</span>
+               </div>
+            </div>
 
-              <div className="overflow-x-auto scrollbar-hide">
-                 <table className="border-collapse table-auto w-px min-w-0">
-                    <thead>
-                       <tr className="bg-slate-50/50">
-                          <th className="px-1 py-3 text-left text-[9px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Hari / Tanggal</th>
-                          <th className="px-1 py-3 text-left text-[9px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Scan In</th>
-                          <th className="px-1 py-3 text-left text-[9px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Status In</th>
-                          <th className="px-1 py-3 text-left text-[9px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Scan Out</th>
-                          <th className="px-1 py-3 text-left text-[9px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Status Out</th>
-                          <th className="px-1 py-3 text-left text-[9px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Jml TTP</th>
-                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50">
-                       {loading ? (
-                          <tr>
-                             <td colSpan={6} className="px-8 py-20 text-center">
-                                <RefreshCcw size={28} className="animate-spin text-slate-200 mx-auto" />
-                             </td>
-                          </tr>
-                       ) : data?.days?.length > 0 ? (
-                          data.days.map((d: any, idx: number) => (
-                             <tr key={idx} className={`transition-colors ${idx % 2 === 1 ? 'bg-slate-50/50' : 'bg-white'} hover:bg-slate-100/50 ${isSameDay(new Date(d.date), today) ? 'bg-blue-50/40' : ''}`}>
-                                <td className="px-1 py-3 whitespace-nowrap">
-                                   <div className="flex flex-col">
-                                      <span className="font-bold text-slate-700 text-[11px]">{format(new Date(d.date), 'EEEE', { locale: id })}</span>
-                                      <span className="text-[8px] font-medium text-slate-400 mt-0.5">{format(new Date(d.date), 'dd MMM yyyy')}</span>
-                                    </div>
-                                </td>
-                                <td className="px-1 py-3 font-semibold text-slate-700 text-[11px] tabular-nums whitespace-nowrap">{formatLogTime(d.logs?.in)}</td>
-                                <td className="px-1 py-3 whitespace-nowrap">
-                                   {d.status === 'LIBUR' ? (
-                                      <span className="text-slate-300 font-medium italic text-[8px] uppercase tracking-wider">LIBUR</span>
-                                   ) : d.lateMinutes > 0 ? (
-                                      <span className="bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wide border border-rose-100">Telat {d.lateMinutes}m</span>
-                                   ) : d.logs?.in ? (
-                                      <span className="bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wide border border-emerald-100">Tepat</span>
-                                   ) : <span className="text-slate-300 text-[9px]">--</span>}
-                                </td>
-                                <td className="px-1 py-3 font-semibold text-slate-700 text-[11px] tabular-nums whitespace-nowrap">{formatLogTime(d.logs?.out)}</td>
-                                <td className="px-1 py-3 whitespace-nowrap">
-                                   {d.status === 'LIBUR' ? (
-                                      <span className="text-slate-300 font-medium italic text-[8px] uppercase tracking-wider">LIBUR</span>
-                                   ) : d.earlyMinutes > 0 ? (
-                                      <span className="bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wide border border-amber-100">Dini {d.earlyMinutes}m</span>
-                                   ) : d.logs?.out ? (
-                                      <span className="bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wide border border-blue-100">OK</span>
-                                   ) : <span className="text-slate-300 text-[9px]">--</span>}
-                                </td>
-                                <td className="px-1 py-3 font-bold text-slate-700 text-[11px] tabular-nums italic whitespace-nowrap">
-                                   {d.ttpValue > 0 ? `Rp${new Intl.NumberFormat('id-ID').format(d.ttpValue)}` : '-'}
-                                </td>
-                             </tr>
-                          ))
-                       ) : (
-                          <tr><td colSpan={6} className="px-8 py-20 text-center text-slate-400 font-medium italic">Tidak ada data untuk periode ini</td></tr>
-                       )}
-                    </tbody>
-                    {!loading && data?.summary && (
-                       <tfoot className="bg-[#0f172a] text-white border-t border-white/5">
-                          {data.summary.voucherNominal > 0 && (
-                             <tr className="border-b border-white/5">
-                                <td colSpan={5} className="px-8 py-3 font-semibold text-[10px] tracking-widest uppercase text-right opacity-60 italic">Potongan Voucher :</td>
-                                <td className="px-8 py-3 text-right font-bold text-base text-rose-400 tabular-nums">
-                                   - Rp {new Intl.NumberFormat('id-ID').format(data.summary.voucherNominal)}
-                                </td>
-                             </tr>
-                          )}
-                          <tr>
-                             <td colSpan={5} className="px-8 py-6 font-semibold text-xs tracking-widest uppercase text-right opacity-80">Total Terima Bersih :</td>
-                             <td className="px-8 py-6 text-right font-bold text-xl text-emerald-400 tabular-nums italic">
-                                Rp {new Intl.NumberFormat('id-ID').format(data.summary.netto)}
-                             </td>
-                          </tr>
-                       </tfoot>
-                    )}
-                 </table>
-              </div>
-           </div>
-        )}
+            {/* JUMLAH HADIR */}
+            <div className="bg-gradient-to-br from-[#2ecc71] to-[#27ae60] p-4 rounded-[1.5rem] text-white shadow-md relative overflow-hidden">
+               <div className="w-9 h-9 bg-white/20 rounded-lg flex items-center justify-center mb-3">
+                  <UserCheck size={18} strokeWidth={2.5} />
+               </div>
+               <h4 className="text-[10px] font-bold uppercase tracking-wider opacity-80 mb-0.5">Hadir</h4>
+               <div className="flex items-baseline gap-1.5">
+                  <h3 className="text-2xl font-black tabular-nums tracking-tight">{data?.summary?.totalDays || 0}</h3>
+                  <span className="text-[10px] font-bold uppercase opacity-60">Hari</span>
+               </div>
+            </div>
+         </div>
 
-        <div className="text-center pt-8 opacity-20">
-           <p className="text-[10px] font-bold tracking-[0.3em] uppercase text-slate-400">Jariku Mansaba Digital Ecosystem • v4.0</p>
-        </div>
-
+         {/* HONOR BANNER - SLIMMER */}
+         <div className="bg-white p-1 rounded-[1.8rem] shadow-lg border border-slate-50">
+            <div className="bg-gradient-to-r from-[#2ecc71] to-[#27ae60] p-5 rounded-[1.6rem] text-white flex justify-between items-center relative overflow-hidden">
+               <div className="absolute top-0 right-0 w-32 h-full bg-white/5 -skew-x-12 translate-x-8"></div>
+               <div className="relative z-10">
+                  <h4 className="text-[9px] font-bold uppercase tracking-widest opacity-80 mb-0.5">Performa</h4>
+                  <h3 className="text-3xl font-black tracking-tighter">{performancePercent}%</h3>
+               </div>
+               <div className="relative z-10 text-right pl-4 border-l border-white/20">
+                  <h4 className="text-[9px] font-bold uppercase tracking-widest opacity-80 mb-0.5">Est. Honor</h4>
+                  <h3 className="text-xl font-black tabular-nums tracking-tight">Rp {new Intl.NumberFormat('id-ID').format(data?.summary?.netto || 0)}</h3>
+                  <p className="text-[7px] font-bold opacity-70 mt-1 uppercase tracking-tighter">Netto After Voucher</p>
+               </div>
+            </div>
+         </div>
       </div>
     </div>
   );
