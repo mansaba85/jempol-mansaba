@@ -570,21 +570,13 @@ app.get('/api/machine/storage', async (req, res) => {
 });
 
 // Jalur 1: Sinkronisasi Log Absensi dengan Validasi Jadwal Ketat
-app.get('/api/machine/sync-all', async (req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-  
-  const sendProgress = (step: string, percent: number, details?: string) => res.write(`data: ${JSON.stringify({ step, percent, details })}\n\n`);
-  
-  sendProgress('Menyiapkan koneksi...', 5);
+const runSyncAll = async (onProgress?: (step: string, percent: number, details?: string) => void) => {
+  const sendProgress = onProgress || ((step, percent, details) => console.log(`[Sync] ${step} (${percent}%) ${details || ''}`));
   
   try {
     const activeDevices = await prisma.device.findMany({ where: { isActive: true } });
     if (activeDevices.length === 0) {
         sendProgress('Tidak ada mesin aktif', 100);
-        res.end();
         return;
     }
     const employees = await prisma.employee.findMany({
@@ -596,7 +588,6 @@ app.get('/api/machine/sync-all', async (req, res) => {
       try {
         sendProgress(`${dev.name}: Menghubungkan...`, (activeDevices.indexOf(dev) / activeDevices.length) * 100);
         
-        // Timeout diperpanjang ke 30 detik untuk kelancaran
         const zk = new ZKLib(dev.ipAddress, dev.port, 30000, 10000);
         await zk.createSocket();
         
@@ -638,7 +629,7 @@ app.get('/api/machine/sync-all', async (req, res) => {
               }
           }
 
-          // 2. If not found, Check Yesterday's Schedule (for Night Shifts)
+          // 2. Yesterday Check
           if (!type) {
               const yesterday = new Date(tapTime.getTime() - 86400000);
               for (const ap of emp.assignedPatterns) {
@@ -647,9 +638,7 @@ app.get('/api/machine/sync-all', async (req, res) => {
                   const item = ap.pattern.items.find(i => i.dayNumber === dayInCycle);
                   if (item && item.timetable) {
                       const tt = item.timetable;
-                      if (nowTime >= (tt.mulaiScanOut || '00:00') && nowTime <= (tt.akhirScanOut || '23:59')) {
-                          type = 'CHECK OUT';
-                      }
+                      if (nowTime >= (tt.mulaiScanOut || '00:00') && nowTime <= (tt.akhirScanOut || '23:59')) type = 'CHECK OUT';
                   }
               }
           }
@@ -671,7 +660,6 @@ app.get('/api/machine/sync-all', async (req, res) => {
       } catch (devErr: any) {
         console.error(`[Sync Error - ${dev.name}]`, devErr);
         sendProgress(`${dev.name}: GAGAL (${devErr.message || 'Koneksi Terputus'})`, ((activeDevices.indexOf(dev) + 1) / activeDevices.length) * 100);
-        // Lanjut ke mesin berikutnya
       }
     }
     sendProgress('Sinkronisasi Selesai!', 100);
@@ -679,6 +667,18 @@ app.get('/api/machine/sync-all', async (req, res) => {
     console.error("[Sync Global Error]", err);
     sendProgress('ERROR KRITIS: ' + (err.message || 'Terjadi kesalahan sistem'), 100); 
   }
+};
+
+app.get('/api/machine/sync-all', async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  
+  await runSyncAll((step, percent, details) => {
+    res.write(`data: ${JSON.stringify({ step, percent, details })}\n\n`);
+  });
+  
   res.end();
 });
 
@@ -1404,4 +1404,36 @@ app.use((req, res, next) => {
   res.sendFile(path.join(__dirname, '../../client/dist/index.html'));
 });
 
-app.listen(port, () => console.log(`Server Jariku Mansaba Running on port ${port}`));
+app.listen(port, () => {
+  console.log(`🚀 Server ready at http://localhost:${port}`);
+});
+
+// --- AUTO SYNC BACKGROUND TASK (EVERY SHARP HOUR) ---
+const initAutoSync = () => {
+  const startSync = async () => {
+    console.log(`[AutoSync] Starting automatic synchronization at sharp hour: ${new Date().toLocaleString()}...`);
+    await runSyncAll();
+  };
+
+  const scheduleNext = () => {
+    const now = new Date();
+    const nextHour = new Date(now);
+    nextHour.setHours(now.getHours() + 1, 0, 0, 0);
+    const msToNext = nextHour.getTime() - now.getTime();
+
+    console.log(`[AutoSync] Next sync scheduled in ${Math.round(msToNext / 60000)} minutes (at ${nextHour.toLocaleTimeString()}).`);
+
+    setTimeout(async () => {
+      await startSync();
+      // Setelah sinkronisasi pertama di jam tepat, ulangi setiap jam
+      setInterval(startSync, 3600000);
+    }, msToNext);
+  };
+
+  // Tunggu sebentar agar server stabil sebelum menghitung jadwal
+  setTimeout(() => {
+    console.log('[AutoSync] Initializing background sync scheduler...');
+    scheduleNext();
+  }, 10000);
+};
+initAutoSync();
