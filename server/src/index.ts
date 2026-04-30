@@ -183,7 +183,12 @@ app.get('/api/patterns', async (req, res) => {
   const patterns = await prisma.shiftpattern.findMany({
     include: { shiftpatternitem: { include: { timetable: true } } }
   });
-  res.json(patterns);
+  // Map back to 'items' for frontend compatibility
+  const mappedPatterns = patterns.map(p => ({
+    ...p,
+    items: p.shiftpatternitem
+  }));
+  res.json(mappedPatterns);
 });
 
 app.post('/api/patterns', async (req, res) => {
@@ -195,10 +200,10 @@ app.post('/api/patterns', async (req, res) => {
         category,
         cycleDays,
         startDate: startDate ? new Date(startDate) : null,
-        items: {
+        shiftpatternitem: {
           create: items.map((it: any) => ({
-            dayNumber: it.dayNumber,
-            timetableId: it.timetableId
+            dayNumber: parseInt(it.dayNumber),
+            timetableId: parseInt(it.timetableId)
           }))
         }
       }
@@ -234,8 +239,8 @@ app.post('/api/patterns/:id/items', async (req, res) => {
       await tx.shiftpatternitem.createMany({
         data: items.filter((it: any) => it.timetableId).map((it: any) => ({
           patternId: id,
-          dayNumber: it.dayNumber,
-          timetableId: it.timetableId
+          dayNumber: parseInt(it.dayNumber),
+          timetableId: parseInt(it.timetableId)
         }))
       });
     });
@@ -259,7 +264,12 @@ app.get('/api/employees', async (req, res) => {
     },
     orderBy: { id: 'asc' }
   });
-  res.json(employees);
+  // Map back to 'assignedPatterns' for frontend compatibility
+  const mappedEmployees = employees.map(e => ({
+    ...e,
+    assignedPatterns: e.employeepattern
+  }));
+  res.json(mappedEmployees);
 });
 
 app.post('/api/employees', async (req, res) => {
@@ -286,12 +296,12 @@ app.post('/api/employees', async (req, res) => {
     }
   });
 
-  if (patternId) {
+  if (patternId && patternId !== 'none') {
     await prisma.employeepattern.deleteMany({ where: { employeeId: empId } });
     await prisma.employeepattern.create({
       data: {
         employeeId: empId,
-        patternId: parseInt(patternId),
+        patternId: parseInt(String(patternId)),
         startDate: new Date(patternStartDate || new Date())
       }
     });
