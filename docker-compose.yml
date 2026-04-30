@@ -1,4 +1,4 @@
-version: '3.8'
+version: '3'
 
 services:
   app:
@@ -12,8 +12,7 @@ services:
       - DATABASE_URL=mysql://mansaba_user:mansaba_secret@db:3306/mansaba_db
       - JWT_SECRET=mansaba_super_secret_1985
     depends_on:
-      db:
-        condition: service_healthy
+      - db
     volumes:
       - mansaba_uploads:/app/server/uploads
 
@@ -28,11 +27,6 @@ services:
       - MYSQL_ROOT_PASSWORD=mansaba_root_secret
     volumes:
       - mansaba_db_data:/var/lib/mysql
-    # Kita tidak ekspos port 3306 ke host agar tidak bentrok dengan DB lain di Proxmox
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      timeout: 10s
-      retries: 5
 
 volumes:
   mansaba_db_data:
