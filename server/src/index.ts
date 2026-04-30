@@ -1401,10 +1401,6 @@ app.post('/api/settings/restore', upload.single('backup'), async (req: any, res:
 const clientDistPath = path.resolve(__dirname, '../../client/dist');
 app.use(express.static(clientDistPath));
 
-// --- SERVE FRONTEND (Untuk Produksi/Docker) ---
-const clientDistPath = path.resolve(__dirname, '../../client/dist');
-app.use(express.static(clientDistPath));
-
 // Middleware cadangan untuk menangani Refresh di SPA (Single Page Application)
 // Tanpa menggunakan simbol bintang (*) agar kompatibel dengan Express 5
 app.use((req, res) => {
