@@ -264,10 +264,13 @@ app.get('/api/employees', async (req, res) => {
     },
     orderBy: { id: 'asc' }
   });
-  // Map back to 'assignedPatterns' for frontend compatibility
+  // Map back to 'assignedPatterns' and 'pattern' for frontend compatibility
   const mappedEmployees = employees.map(e => ({
     ...e,
-    assignedPatterns: e.employeepattern
+    assignedPatterns: e.employeepattern.map((ap: any) => ({
+      ...ap,
+      pattern: ap.shiftpattern
+    }))
   }));
   res.json(mappedEmployees);
 });
