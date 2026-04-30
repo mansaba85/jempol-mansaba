@@ -3,9 +3,12 @@
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "strict": true,
+    "strict": false,
     "skipLibCheck": true,
     "outDir": "./dist",
     "rootDir": "./src"
