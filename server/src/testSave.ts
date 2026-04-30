@@ -8,7 +8,7 @@ async function run() {
   const dev = await prisma.device.findUnique({ where: { id: devId } });
   
   const employees = await prisma.employee.findMany({
-      include: { assignedPatterns: { include: { pattern: { include: { items: { include: { timetable: true } } } } } } }
+      include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } } } }
     });
   const empMap = new Map(employees.map(e => [e.id, e]));
 

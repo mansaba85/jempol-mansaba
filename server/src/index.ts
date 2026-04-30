@@ -84,7 +84,7 @@ app.post('/api/login/employee', async (req, res) => {
 // Jalur Baru: Hanya untuk data Publik (Aman untuk halaman Login)
 app.get('/api/settings/public', async (req, res) => {
   const publicKeys = ['app_name', 'school_name', 'school_logo'];
-  const settings = await prisma.systemSetting.findMany({
+  const settings = await prisma.systemsetting.findMany({
     where: { key: { in: publicKeys } }
   });
   res.json(settings);
@@ -141,7 +141,7 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // Categories & Timetables
 app.get('/api/categories', async (req, res) => {
-  const categories = await prisma.category.findMany({ include: { timetables: true } });
+  const categories = await prisma.category.findMany({ include: { timetable: true } });
   res.json(categories);
 });
 
@@ -176,8 +176,8 @@ app.delete('/api/timetables/:id', async (req, res) => {
 
 // Shift Patterns
 app.get('/api/patterns', async (req, res) => {
-  const patterns = await prisma.shiftPattern.findMany({
-    include: { items: { include: { timetable: true } } }
+  const patterns = await prisma.shiftpattern.findMany({
+    include: { shiftpatternitem: { include: { timetable: true } } }
   });
   res.json(patterns);
 });
@@ -185,7 +185,7 @@ app.get('/api/patterns', async (req, res) => {
 app.post('/api/patterns', async (req, res) => {
   const { name, category, cycleDays, startDate, items } = req.body;
   try {
-    const pattern = await prisma.shiftPattern.create({
+    const pattern = await prisma.shiftpattern.create({
       data: {
         name,
         category,
@@ -208,7 +208,7 @@ app.put('/api/patterns/:id', async (req, res) => {
   const id = parseInt(req.params.id);
   const { name, category, cycleDays, startDate } = req.body;
   try {
-    const pattern = await prisma.shiftPattern.update({
+    const pattern = await prisma.shiftpattern.update({
       where: { id },
       data: { 
         name, 
@@ -226,8 +226,8 @@ app.post('/api/patterns/:id/items', async (req, res) => {
   const { items } = req.body;
   try {
     await prisma.$transaction(async (tx) => {
-      await tx.shiftPatternItem.deleteMany({ where: { patternId: id } });
-      await tx.shiftPatternItem.createMany({
+      await tx.shiftpatternitem.deleteMany({ where: { patternId: id } });
+      await tx.shiftpatternitem.createMany({
         data: items.filter((it: any) => it.timetableId).map((it: any) => ({
           patternId: id,
           dayNumber: it.dayNumber,
@@ -241,9 +241,9 @@ app.post('/api/patterns/:id/items', async (req, res) => {
 
 app.delete('/api/patterns/:id', async (req, res) => {
   const id = parseInt(req.params.id);
-  await prisma.shiftPatternItem.deleteMany({ where: { patternId: id } });
-  await prisma.employeePattern.deleteMany({ where: { patternId: id } });
-  await prisma.shiftPattern.delete({ where: { id } });
+  await prisma.shiftpatternitem.deleteMany({ where: { patternId: id } });
+  await prisma.employeepattern.deleteMany({ where: { patternId: id } });
+  await prisma.shiftpattern.delete({ where: { id } });
   res.json({ success: true });
 });
 
@@ -251,7 +251,7 @@ app.delete('/api/patterns/:id', async (req, res) => {
 app.get('/api/employees', async (req, res) => {
   const employees = await prisma.employee.findMany({
     include: { 
-      assignedPatterns: { include: { pattern: true }, orderBy: { id: 'desc' }, take: 1 } 
+      employeepattern: { include: { shiftpattern: true }, orderBy: { id: 'desc' }, take: 1 } 
     },
     orderBy: { id: 'asc' }
   });
@@ -268,7 +268,8 @@ app.post('/api/employees', async (req, res) => {
       nip, 
       role, 
       transportRate: parseFloat(String(transportRate || 0)),
-      pin: pin ? String(pin) : undefined
+      pin: pin ? String(pin) : undefined,
+      updatedAt: new Date()
     },
     create: { 
       id: empId, 
@@ -276,13 +277,14 @@ app.post('/api/employees', async (req, res) => {
       nip, 
       role, 
       transportRate: parseFloat(String(transportRate || 0)),
-      pin: pin ? String(pin) : undefined
+      pin: pin ? String(pin) : undefined,
+      updatedAt: new Date()
     }
   });
 
   if (patternId) {
-    await prisma.employeePattern.deleteMany({ where: { employeeId: empId } });
-    await prisma.employeePattern.create({
+    await prisma.employeepattern.deleteMany({ where: { employeeId: empId } });
+    await prisma.employeepattern.create({
       data: {
         employeeId: empId,
         patternId: parseInt(patternId),
@@ -317,8 +319,8 @@ app.put('/api/employees/:id', async (req, res) => {
 app.post('/api/employees/bulk-pattern', async (req, res) => {
   const { employeeIds, patternId, startDate } = req.body;
   try {
-    await prisma.employeePattern.deleteMany({ where: { employeeId: { in: employeeIds } } });
-    await prisma.employeePattern.createMany({
+    await prisma.employeepattern.deleteMany({ where: { employeeId: { in: employeeIds } } });
+    await prisma.employeepattern.createMany({
       data: employeeIds.map((id: number) => ({
         employeeId: id,
         patternId: parseInt(patternId),
@@ -334,10 +336,10 @@ app.post('/api/employees/bulk-pattern', async (req, res) => {
 app.delete('/api/employees/:id', async (req, res) => {
   const id = parseInt(req.params.id);
   try {
-    await prisma.employeePattern.deleteMany({ where: { employeeId: id } });
+    await prisma.employeepattern.deleteMany({ where: { employeeId: id } });
     await prisma.attendance.deleteMany({ where: { employeeId: id } });
     await prisma.honor.deleteMany({ where: { employeeId: id } });
-    await prisma.employeeShift.deleteMany({ where: { employeeId: id } });
+    await prisma.employeeshift.deleteMany({ where: { employeeId: id } });
     await prisma.employee.delete({ where: { id } });
     res.json({ success: true });
   } catch (error) {
@@ -349,7 +351,7 @@ app.delete('/api/employees/:id', async (req, res) => {
 // Device Management
 // Settings
 app.get('/api/settings', async (req, res) => {
-  const settings = await prisma.systemSetting.findMany();
+  const settings = await prisma.systemsetting.findMany();
   res.json(settings);
 });
 
@@ -374,10 +376,10 @@ app.post('/api/employees/bulk-delete', async (req, res) => {
   
   try {
     const numericIds = ids.map(Number);
-    await prisma.employeePattern.deleteMany({ where: { employeeId: { in: numericIds } } });
+    await prisma.employeepattern.deleteMany({ where: { employeeId: { in: numericIds } } });
     await prisma.attendance.deleteMany({ where: { employeeId: { in: numericIds } } });
     await prisma.honor.deleteMany({ where: { employeeId: { in: numericIds } } });
-    await prisma.employeeShift.deleteMany({ where: { employeeId: { in: numericIds } } });
+    await prisma.employeeshift.deleteMany({ where: { employeeId: { in: numericIds } } });
     await prisma.employee.deleteMany({ where: { id: { in: numericIds } } });
     res.json({ success: true });
   } catch (error) {
@@ -487,20 +489,20 @@ app.delete('/api/attendance/manual', async (req, res) => {
 
     const emp = await prisma.employee.findUnique({
       where: { id: empId },
-      include: { assignedPatterns: { include: { pattern: { include: { items: { include: { timetable: true } } } } } } }
+      include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } } } }
     });
 
     if (!emp) return res.status(404).json({ error: 'Pegawai tidak ditemukan' });
 
     let timetable: any = null;
-    const ep = emp.assignedPatterns[0];
-    if (ep && ep.pattern?.startDate) {
-        const dS = new Date(ep.pattern.startDate); dS.setHours(0,0,0,0);
+    const ep = emp.employeepattern[0];
+    if (ep && ep.shiftpattern?.startDate) {
+        const dS = new Date(ep.shiftpattern.startDate); dS.setHours(0,0,0,0);
         const dC = new Date(targetDate); dC.setHours(0,0,0,0);
         const diff = Math.round((dC.getTime() - dS.getTime()) / 86400000);
         if (diff >= 0) {
-            const dy = (diff % ep.pattern.cycleDays) + 1;
-            const ci = ep.pattern.items.find(i => i.dayNumber === dy);
+            const dy = (diff % ep.shiftpattern.cycleDays) + 1;
+            const ci = ep.shiftpattern.shiftpatternitem.find(i => i.dayNumber === dy);
             timetable = ci?.timetable;
         }
     }
@@ -580,7 +582,7 @@ const runSyncAll = async (onProgress?: (step: string, percent: number, details?:
         return;
     }
     const employees = await prisma.employee.findMany({
-      include: { assignedPatterns: { include: { pattern: { include: { items: { include: { timetable: true } } } } } } }
+      include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } } } }
     });
     const empMap = new Map(employees.map(e => [e.id, e]));
 
@@ -618,10 +620,10 @@ const runSyncAll = async (onProgress?: (step: string, percent: number, details?:
           let type: string | null = null;
 
           // 1. Check Today's Schedule
-          for (const ap of emp.assignedPatterns) {
+          for (const ap of emp.employeepattern) {
               const diffDays = Math.floor((tapTime.getTime() - ap.startDate.getTime()) / (1000 * 60 * 60 * 24));
-              const dayInCycle = (diffDays % ap.pattern.cycleDays) + 1;
-              const item = ap.pattern.items.find(i => i.dayNumber === dayInCycle);
+              const dayInCycle = (diffDays % ap.shiftpattern.cycleDays) + 1;
+              const item = ap.shiftpattern.shiftpatternitem.find(i => i.dayNumber === dayInCycle);
               if (item && item.timetable) {
                   const tt = item.timetable;
                   if (nowTime >= (tt.mulaiScanIn || '00:00') && nowTime <= (tt.akhirScanIn || '23:59')) type = 'CHECK IN';
@@ -632,10 +634,10 @@ const runSyncAll = async (onProgress?: (step: string, percent: number, details?:
           // 2. Yesterday Check
           if (!type) {
               const yesterday = new Date(tapTime.getTime() - 86400000);
-              for (const ap of emp.assignedPatterns) {
+              for (const ap of emp.employeepattern) {
                   const diffDays = Math.floor((yesterday.getTime() - ap.startDate.getTime()) / (1000 * 60 * 60 * 24));
-                  const dayInCycle = (diffDays % ap.pattern.cycleDays) + 1;
-                  const item = ap.pattern.items.find(i => i.dayNumber === dayInCycle);
+                  const dayInCycle = (diffDays % ap.shiftpattern.cycleDays) + 1;
+                  const item = ap.shiftpattern.shiftpatternitem.find(i => i.dayNumber === dayInCycle);
                   if (item && item.timetable) {
                       const tt = item.timetable;
                       if (nowTime >= (tt.mulaiScanOut || '00:00') && nowTime <= (tt.akhirScanOut || '23:59')) type = 'CHECK OUT';
@@ -710,7 +712,7 @@ app.get('/api/machine/sync-one/:id', async (req, res) => {
     sendProgress(`Menghubungkan ke ${dev.name}...`, 10);
     
     const employees = await prisma.employee.findMany({
-      include: { assignedPatterns: { include: { pattern: { include: { items: { include: { timetable: true } } } } } } }
+      include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } } } }
     });
     const empMap = new Map(employees.map(e => [e.id, e]));
 
@@ -744,10 +746,10 @@ app.get('/api/machine/sync-one/:id', async (req, res) => {
         const nowTime = formatTime(tapTime);
 
         let type: string | null = null;
-        for (const ap of emp.assignedPatterns) {
+        for (const ap of emp.employeepattern) {
             const diffDays = Math.floor((tapTime.getTime() - ap.startDate.getTime()) / (1000 * 60 * 60 * 24));
-            const dayInCycle = (diffDays % ap.pattern.cycleDays) + 1;
-            const item = ap.pattern.items.find(i => i.dayNumber === dayInCycle);
+            const dayInCycle = (diffDays % ap.shiftpattern.cycleDays) + 1;
+            const item = ap.shiftpattern.shiftpatternitem.find(i => i.dayNumber === dayInCycle);
             if (item && item.timetable) {
                 const tt = item.timetable;
                 if (nowTime >= (tt.mulaiScanIn || '00:00') && nowTime <= (tt.akhirScanIn || '23:59')) type = 'CHECK IN';
@@ -757,10 +759,10 @@ app.get('/api/machine/sync-one/:id', async (req, res) => {
         
         if (!type) {
             const yesterday = new Date(tapTime.getTime() - 86400000);
-            for (const ap of emp.assignedPatterns) {
+            for (const ap of emp.employeepattern) {
                 const diffDays = Math.floor((yesterday.getTime() - ap.startDate.getTime()) / (1000 * 60 * 60 * 24));
-                const dayInCycle = (diffDays % ap.pattern.cycleDays) + 1;
-                const item = ap.pattern.items.find(i => i.dayNumber === dayInCycle);
+                const dayInCycle = (diffDays % ap.shiftpattern.cycleDays) + 1;
+                const item = ap.shiftpattern.shiftpatternitem.find(i => i.dayNumber === dayInCycle);
                 if (item && item.timetable) {
                     const tt = item.timetable;
                     if (nowTime >= (tt.mulaiScanOut || '00:00') && nowTime <= (tt.akhirScanOut || '23:59')) type = 'CHECK OUT';
@@ -828,8 +830,8 @@ app.get('/api/machine/sync-employees', async (req, res) => {
                     if (u.name && u.name.trim() !== '') {
                         await prisma.employee.upsert({
                             where: { id: parseInt(u.userId) },
-                            update: { name: u.name },
-                            create: { id: parseInt(u.userId), name: u.name }
+                            update: { name: u.name, updatedAt: new Date() },
+                            create: { id: parseInt(u.userId), name: u.name, updatedAt: new Date() }
                         });
                     }
                 }
@@ -861,7 +863,7 @@ app.get('/api/reports/detailed', async (req, res) => {
 
     const emp = await prisma.employee.findUnique({
       where: { id: empId },
-      include: { assignedPatterns: { include: { pattern: { include: { items: { include: { timetable: true } } } } } } }
+      include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } } } }
     });
     if (!emp) return res.status(404).json({ error: 'Pegawai tidak ditemukan' });
 
@@ -870,7 +872,7 @@ app.get('/api/reports/detailed', async (req, res) => {
       orderBy: { timestamp: 'asc' }
     });
 
-    const sysS = await prisma.systemSetting.findMany();
+    const sysS = await prisma.systemsetting.findMany();
     const sMap = new Map(sysS.map(s => [s.key, s.value]));
     
     const rU = parseInt(String(sMap.get('rate_umum') || 25000));
@@ -889,15 +891,15 @@ app.get('/api/reports/detailed', async (req, res) => {
     while (cd <= end) {
       const dateStr = dateFormatter.format(cd);
       let tt: any = null;
-      const ep = emp.assignedPatterns[0];
+      const ep = emp.employeepattern[0];
       
-      if (ep && ep.pattern?.startDate) {
-        const dS = new Date(ep.pattern.startDate); dS.setHours(0,0,0,0);
+      if (ep && ep.shiftpattern?.startDate) {
+        const dS = new Date(ep.shiftpattern.startDate); dS.setHours(0,0,0,0);
         const dC = new Date(cd); dC.setHours(0,0,0,0);
         const diff = Math.round((dC.getTime() - dS.getTime()) / 86400000);
         if (diff >= 0) {
-          const dy = (diff % ep.pattern.cycleDays) + 1;
-          const ci = ep.pattern.items.find(i => i.dayNumber === dy);
+          const dy = (diff % ep.shiftpattern.cycleDays) + 1;
+          const ci = ep.shiftpattern.shiftpatternitem.find(i => i.dayNumber === dy);
           if (ci?.timetable) {
             let dow = cd.getDay(); if (dow === 0) dow = 7;
             const tD = (ci.timetable.days || "1,2,3,4,5,6").split(',').map(Number);
@@ -1048,12 +1050,12 @@ app.get('/api/reports/monthly', async (req, res) => {
     const start = new Date(y, m - 1, 1), end = endOfMonth(start);
     let employees = [];
     if (employeeId === 'all') {
-      employees = await prisma.employee.findMany({ include: { assignedPatterns: { include: { pattern: { include: { items: { include: { timetable: true } } } } } } } });
+      employees = await prisma.employee.findMany({ include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } } } } });
     } else {
-      const emp = await prisma.employee.findUnique({ where: { id: parseInt(String(employeeId)) }, include: { assignedPatterns: { include: { pattern: { include: { items: { include: { timetable: true } } } } } } } });
+      const emp = await prisma.employee.findUnique({ where: { id: parseInt(String(employeeId)) }, include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } } } } });
       if (emp) employees = [emp];
     }
-    const sys = await prisma.systemSetting.findMany();
+    const sys = await prisma.systemsetting.findMany();
     const sMap = new Map(sys.map(s => [s.key, s.value]));
     const pL = parseInt(sMap.get('penalty_late_minutes') || '0');
     const pE = parseInt(sMap.get('penalty_early_minutes') || '0');
@@ -1065,14 +1067,14 @@ app.get('/api/reports/monthly', async (req, res) => {
       let cd = new Date(start);
       while (cd <= end) {
         const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(cd);
-        let tt: any = null; const ep = emp.assignedPatterns[0];
-        if (ep && ep.pattern?.startDate) {
-          const dS = new Date(ep.pattern.startDate); dS.setHours(0,0,0,0);
+        let tt: any = null; const ep = emp.employeepattern[0];
+        if (ep && ep.shiftpattern?.startDate) {
+          const dS = new Date(ep.shiftpattern.startDate); dS.setHours(0,0,0,0);
           const dC = new Date(cd); dC.setHours(0,0,0,0);
           const diff = Math.round((dC.getTime() - dS.getTime()) / 86400000);
           if (diff >= 0) {
-            const dy = (diff % ep.pattern.cycleDays) + 1;
-            const ci = ep.pattern.items.find(i => i.dayNumber === dy);
+            const dy = (diff % ep.shiftpattern.cycleDays) + 1;
+            const ci = ep.shiftpattern.shiftpatternitem.find(i => i.dayNumber === dy);
             if (ci?.timetable) {
               let dow = cd.getDay(); if (dow === 0) dow = 7;
               const tD = (ci.timetable.days || "1,2,3,4,5,6").split(',').map(Number);
@@ -1122,12 +1124,12 @@ app.get('/api/honor/recap', async (req, res) => {
   const { month, year } = req.query;
   const m = parseInt(String(month)), y = parseInt(String(year));
   const start = new Date(y, m - 1, 1), end = endOfMonth(start);
-  const settings = await prisma.systemSetting.findMany();
+  const settings = await prisma.systemsetting.findMany();
   const sMap = new Map(settings.map(s => [s.key, s.value]));
   const rU = parseInt(String(sMap.get('rate_umum') || 25000)), rS = parseInt(String(sMap.get('rate_sertif') || 25000)), rL = parseInt(String(sMap.get('rate_tidak_disiplin') || 10000)), vV = parseInt(String(sMap.get('voucher_nominal') || 30000));
   const pL = parseInt(sMap.get('penalty_late_minutes') || '0');
   const pE = parseInt(sMap.get('penalty_early_minutes') || '0');
-  const employees = await prisma.employee.findMany({ include: { assignedPatterns: { include: { pattern: { include: { items: { include: { timetable: true } } } } } } } });
+  const employees = await prisma.employee.findMany({ include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } } } } });
   
   const allLogs = await prisma.attendance.findMany({ 
     where: { timestamp: { gte: start, lte: new Date(end.getTime() + 86400000) } } 
@@ -1156,14 +1158,14 @@ app.get('/api/honor/recap', async (req, res) => {
       const key = `${emp.id}_${dateStr}`;
       const dayLogs = logsMap.get(key) || [];
 
-      let tt: any = null; const ep = emp.assignedPatterns[0];
-      if (ep && ep.pattern?.startDate) {
-        const dS = new Date(ep.pattern.startDate); dS.setHours(0,0,0,0);
+      let tt: any = null; const ep = emp.employeepattern[0];
+      if (ep && ep.shiftpattern?.startDate) {
+        const dS = new Date(ep.shiftpattern.startDate); dS.setHours(0,0,0,0);
         const dC = new Date(cd); dC.setHours(0,0,0,0);
         const d = Math.round((dC.getTime() - dS.getTime()) / 86400000);
         if (d >= 0) {
-          const dy = (d % ep.pattern.cycleDays) + 1;
-          const ci = ep.pattern.items.find(i => i.dayNumber === dy);
+          const dy = (d % ep.shiftpattern.cycleDays) + 1;
+          const ci = ep.shiftpattern.shiftpatternitem.find(i => i.dayNumber === dy);
           if (ci?.timetable) {
             let dow = cd.getDay(); if (dow === 0) dow = 7;
             const validDays = (ci.timetable.days || "1,2,3,4,5,6").split(',').map(Number);
@@ -1248,11 +1250,11 @@ app.get('/api/reports/absent', async (req, res) => {
     // 1. Ambil semua pegawai & pola shift-nya
     const employees = await prisma.employee.findMany({ 
       include: { 
-        assignedPatterns: { 
+        employeepattern: { 
           include: { 
-            pattern: { 
+            shiftpattern: { 
               include: { 
-                items: { include: { timetable: true } } 
+                shiftpatternitem: { include: { timetable: true } } 
               } 
             } 
           } 
@@ -1279,15 +1281,15 @@ app.get('/api/reports/absent', async (req, res) => {
 
       // 3. Cek apakah hari ini dia HARUSNYA masuk sesuai shift?
       let hasShiftToday = false;
-      const ep = emp.assignedPatterns[0];
+      const ep = emp.employeepattern[0];
 
-      if (ep && ep.pattern?.startDate) {
-        const dS = new Date(ep.pattern.startDate); dS.setHours(0,0,0,0);
+      if (ep && ep.shiftpattern?.startDate) {
+        const dS = new Date(ep.shiftpattern.startDate); dS.setHours(0,0,0,0);
         const diff = Math.round((targetDate.getTime() - dS.getTime()) / 86400000);
         
         if (diff >= 0) {
-          const dy = (diff % ep.pattern.cycleDays) + 1;
-          const ci = ep.pattern.items.find(i => i.dayNumber === dy);
+          const dy = (diff % ep.shiftpattern.cycleDays) + 1;
+          const ci = ep.shiftpattern.shiftpatternitem.find(i => i.dayNumber === dy);
           
           if (ci?.timetable) {
             // Cek apakah hari ini (Senin-Minggu) aktif di jadwal tersebut
@@ -1320,14 +1322,14 @@ app.get('/api/reports/absent', async (req, res) => {
 });
 
 // SETTINGS API
-app.get('/api/settings', async (req, res) => res.json(await prisma.systemSetting.findMany()));
+app.get('/api/settings', async (req, res) => res.json(await prisma.systemsetting.findMany()));
 app.post('/api/settings', async (req, res) => {
   if (req.body.settings) {
     for (const s of req.body.settings) {
-      await prisma.systemSetting.upsert({
+      await prisma.systemsetting.upsert({
         where: { key: s.key },
-        update: { value: String(s.value) },
-        create: { key: s.key, value: String(s.value) }
+        update: { value: String(s.value), updatedAt: new Date() },
+        create: { key: s.key, value: String(s.value), updatedAt: new Date() }
       });
     }
   }
@@ -1349,12 +1351,12 @@ app.get('/api/settings/backup', async (req, res) => {
       employees: await prisma.employee.findMany(),
       categories: await prisma.category.findMany(),
       timetables: await prisma.timetable.findMany(),
-      patterns: await prisma.shiftPattern.findMany(),
-      patternItems: await prisma.shiftPatternItem.findMany(),
-      employeePatterns: await prisma.employeePattern.findMany(),
+      patterns: await prisma.shiftpattern.findMany(),
+      patternItems: await prisma.shiftpatternitem.findMany(),
+      employeePatterns: await prisma.employeepattern.findMany(),
       attendances: await prisma.attendance.findMany(),
       devices: await prisma.device.findMany(),
-      settings: await prisma.systemSetting.findMany()
+      settings: await prisma.systemsetting.findMany()
     };
     res.json(data);
   } catch (error) { res.status(500).json({ error: 'Gagal backup' }); }
@@ -1367,25 +1369,25 @@ app.post('/api/settings/restore', upload.single('backup'), async (req: any, res:
     await prisma.$transaction(async (tx) => {
       await tx.attendance.deleteMany();
       await tx.honor.deleteMany();
-      await tx.employeePattern.deleteMany();
-      await tx.employeeShift.deleteMany();
-      await tx.shiftPatternItem.deleteMany();
-      await tx.shiftPattern.deleteMany();
+      await tx.employeepattern.deleteMany();
+      await tx.employeeshift.deleteMany();
+      await tx.shiftpatternitem.deleteMany();
+      await tx.shiftpattern.deleteMany();
       await tx.timetable.deleteMany();
       await tx.category.deleteMany();
       await tx.employee.deleteMany();
       await tx.device.deleteMany();
-      await tx.systemSetting.deleteMany();
+      await tx.systemsetting.deleteMany();
 
       if (data.employees) await tx.employee.createMany({ data: data.employees });
       if (data.categories) await tx.category.createMany({ data: data.categories });
       if (data.timetables) await tx.timetable.createMany({ data: data.timetables });
-      if (data.patterns) await tx.shiftPattern.createMany({ data: data.patterns });
-      if (data.patternItems) await tx.shiftPatternItem.createMany({ data: data.patternItems });
-      if (data.employeePatterns) await tx.employeePattern.createMany({ data: data.employeePatterns });
+      if (data.patterns) await tx.shiftpattern.createMany({ data: data.patterns });
+      if (data.patternItems) await tx.shiftpatternitem.createMany({ data: data.patternItems });
+      if (data.employeePatterns) await tx.employeepattern.createMany({ data: data.employeePatterns });
       if (data.attendances) await tx.attendance.createMany({ data: data.attendances });
       if (data.devices) await tx.device.createMany({ data: data.devices });
-      if (data.settings) await tx.systemSetting.createMany({ data: data.settings });
+      if (data.settings) await tx.systemsetting.createMany({ data: data.settings });
     });
     fs.unlinkSync(req.file.path);
     res.json({ success: true });
