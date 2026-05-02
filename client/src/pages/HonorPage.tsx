@@ -7,7 +7,7 @@ import toast, { Toaster } from 'react-hot-toast';
 const API_URL = '/api';
 
 const HonorPage = () => {
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [employees, setEmployees] = useState<any[]>([]);
   const [honorData, setHonorData] = useState<any[]>([]);
   const [search, setSearch] = useState('');
@@ -21,6 +21,7 @@ const HonorPage = () => {
     penalty_early_minutes: '0'
   });
 
+  const [summary, setSummary] = useState<any>(null);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
@@ -34,7 +35,12 @@ const HonorPage = () => {
       ]);
       
       setEmployees(empRes.data);
-      setHonorData(honorRes.data || []);
+      if (honorRes.data.summary) {
+        setSummary(honorRes.data.summary);
+        setHonorData(honorRes.data.data || []);
+      } else {
+        setHonorData(honorRes.data || []);
+      }
 
       const newRates = { ...rates };
       setRes.data.forEach((s: any) => {
@@ -339,17 +345,19 @@ const HonorPage = () => {
                         <th className="mansaba-th text-center w-24">No. ID</th>
                         <th className="mansaba-th">Nama Pegawai</th>
                         <th className="mansaba-th text-center">Kategori</th>
-                        <th className="mansaba-th text-center w-32">Jml Disiplin</th>
-                        <th className="mansaba-th text-center w-36">Jml Tidak Disiplin</th>
-                        <th className="mansaba-th text-center w-36">Jml Tidak Hadir</th>
-                        <th className="mansaba-th text-right px-6 bg-slate-50 w-44">Total Honor (Rp)</th>
+                        <th className="mansaba-th text-center">Jml Disiplin</th>
+                        <th className="mansaba-th text-center">Jml Tidak Disiplin</th>
+                        <th className="mansaba-th text-center">Jml Tidak Hadir</th>
+                        <th className="mansaba-th text-right px-6">Honor Kotor</th>
+                        <th className="mansaba-th text-right px-6">Voucher</th>
+                        <th className="mansaba-th text-right px-6 bg-slate-50">Total Bersih</th>
                       </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                       {loading ? (
-                        <tr><td colSpan={8} className="text-center py-12 text-slate-500"><i className="fa-solid fa-spinner fa-spin text-xl text-blue-600 mb-2 block"></i> Memuat data hitungan honor...</td></tr>
+                        <tr><td colSpan={10} className="text-center py-12 text-slate-500"><i className="fa-solid fa-spinner fa-spin text-xl text-blue-600 mb-2 block"></i> Memuat data hitungan honor...</td></tr>
                       ) : filteredHonor.length === 0 ? (
-                        <tr><td colSpan={8} className="text-center py-12 text-slate-500">Tidak ada data kehadiran di bulan ini.</td></tr>
+                        <tr><td colSpan={10} className="text-center py-12 text-slate-500">Tidak ada data kehadiran di bulan ini.</td></tr>
                       ) : filteredHonor.map((h, i) => (
                         <tr key={h.employeeId} className="tr-hover">
                             <td className="mansaba-td text-center text-slate-500">
@@ -375,8 +383,16 @@ const HonorPage = () => {
                             <td className="mansaba-td text-center text-slate-600">
                               {h.totalAbsent}
                             </td>
+                            <td className="mansaba-td text-right px-6 text-slate-600 font-medium">
+                              Rp {h.bruto.toLocaleString()}
+                            </td>
+                            <td className="mansaba-td text-right px-6 text-rose-500 font-medium">
+                              - Rp {h.voucherNominal.toLocaleString()}
+                            </td>
                             <td className="mansaba-td text-right px-6 bg-slate-50/50">
-                              <span className="font-bold text-slate-800 text-sm">Rp {h.netto.toLocaleString()}</span>
+                              <span className={`font-bold text-sm ${h.netto > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                Rp {h.netto.toLocaleString()}
+                              </span>
                             </td>
                         </tr>
                       ))}

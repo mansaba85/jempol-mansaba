@@ -1153,84 +1153,156 @@ app.get('/api/honor/recap', async (req, res) => {
   });
 
   // Pre-process logs into a Map for O(1) lookup
-  const logsMap = new Map();
-  const dateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' });
+  const logsMap = new Map<string, any[]>();
+  const dateFormatter = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', day: '2-digit', month: '2-digit', year: 'numeric' });
   const timeFormatter = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
   const dayNameFormatter = new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', weekday: 'long' });
 
+  const getJktTime = (date: Date) => {
+    // Ambil info tanggal Jakarta asli
+    const s = date.toLocaleString('en-GB', { timeZone: 'Asia/Jakarta' });
+    const match = s.match(/(\d+)\/(\d+)\/(\d+), (\d+):(\d+)/);
+    if (!match) return "00:00";
+    
+    const [, dd, mm, yyyy, hh, mi] = match;
+    const isOld = parseInt(yyyy) < 2026 || (parseInt(yyyy) === 2026 && parseInt(mm) < 5);
+
+    if (isOld) {
+      // Data April ke belakang: Ambil jam mentah (UTC)
+      const h = date.getUTCHours().toString().padStart(2, '0');
+      const m = date.getUTCMinutes().toString().padStart(2, '0');
+      return `${h}:${m}`;
+    } else {
+      // Data Mei ke depan: Ambil jam Jakarta asli (Hasil match)
+      return `${hh}:${mi}`;
+    }
+  };
+  
+  const getJktDateStr = (date: Date) => {
+    const s = date.toLocaleString('en-GB', { timeZone: 'Asia/Jakarta' });
+    const match = s.match(/(\d+)\/(\d+)\/(\d+)/);
+    if (!match) return "01/01/2026";
+    
+    const [, dd, mm, yyyy] = match;
+    const isOld = parseInt(yyyy) < 2026 || (parseInt(yyyy) === 2026 && parseInt(mm) < 5);
+
+    if (isOld) {
+      // Data April: Pakai UTC date agar tidak bergeser ke Mei
+      const y = date.getUTCFullYear();
+      const m = (date.getUTCMonth() + 1).toString().padStart(2, '0');
+      const d = date.getUTCDate().toString().padStart(2, '0');
+      return `${d}/${m}/${y}`;
+    } else {
+      // Data Mei: Pakai tanggal Jakarta asli
+      return `${dd.padStart(2, '0')}/${mm.padStart(2, '0')}/${yyyy}`;
+    }
+  };
+
   allLogs.forEach(l => {
-    const dStr = dateFormatter.format(l.timestamp);
-    const key = `${l.employeeId}_${dStr}`;
+    const dateStr = getJktDateStr(l.timestamp);
+    const key = `${l.employeeId}_${dateStr}`;
     if (!logsMap.has(key)) logsMap.set(key, []);
-    logsMap.get(key).push(l);
+    logsMap.get(key)?.push(l);
   });
 
-  const results = [];
+  const results: any[] = [];
   for (const emp of employees) {
     let dD = 0, nD = 0, tH = 0, tW = 0;
     
-    let cd = new Date(start);
-    while (cd <= end) {
-      const dateStr = dateFormatter.format(cd);
-      const key = `${emp.id}_${dateStr}`;
-      const dayLogs = logsMap.get(key) || [];
-
-      let tt: any = null; const ep = emp.employeepattern[0];
-      if (ep && ep.shiftpattern?.startDate) {
-        const dS = new Date(ep.shiftpattern.startDate); dS.setHours(0,0,0,0);
-        const dC = new Date(cd); dC.setHours(0,0,0,0);
-        const d = Math.round((dC.getTime() - dS.getTime()) / 86400000);
-        if (d >= 0) {
-          const dy = (d % ep.shiftpattern.cycleDays) + 1;
-          const ci = ep.shiftpattern.shiftpatternitem.find(i => i.dayNumber === dy);
-          if (ci?.timetable) {
-            let dow = cd.getDay(); if (dow === 0) dow = 7;
+    let cdLoop = new Date(start);
+    while (cdLoop <= end) {
+      const dateStr = getJktDateStr(cdLoop);
+      const cd = new Date(cdLoop);
+      
+      let tt: any = null; 
+      const ep = emp.employeepattern && emp.employeepattern[0];
+      if (ep && ep.shiftpattern) {
+        // Ambil StartDate Pattern (Hanya Tanggalnya saja)
+        const dS = new Date(ep.shiftpattern.startDate);
+        dS.setHours(0,0,0,0);
+        
+        // Ambil Tanggal Berjalan (Hanya Tanggalnya saja)
+        const dC = new Date(cd);
+        dC.setHours(0,0,0,0);
+        
+        // Hitung selisih hari secara akurat
+        const diffTime = dC.getTime() - dS.getTime();
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (diffDays >= 0) {
+          const dayCycle = (diffDays % ep.shiftpattern.cycleDays) + 1;
+          const ci = ep.shiftpattern.shiftpatternitem.find(i => i.dayNumber === dayCycle);
+          
+          if (ci && ci.timetable) {
+            // Cek apakah hari ini (Senin-Minggu) aktif di jadwal tersebut
+            let dow = dC.getDay(); // 0=Minggu, 1=Senin...
+            const dowFixed = (dow === 0 ? 7 : dow); // Paksa 7=Minggu
             const validDays = (ci.timetable.days || "1,2,3,4,5,6").split(',').map(Number);
-            if (validDays.includes(cd.getDay()) || validDays.includes(dow)) tt = ci.timetable;
+            
+            if (validDays.includes(dow) || validDays.includes(dowFixed)) {
+              tt = ci.timetable;
+            }
           }
         }
       }
 
       if (tt) {
         tW++;
+        const dayLogs = logsMap.get(`${emp.id}_${dateStr}`) || [];
         const isO = tt.jamPulang < tt.jamMasuk;
+        
         const iL = dayLogs.find(l => l.isManual || (() => {
-          const h = timeFormatter.format(l.timestamp);
-          return h >= (tt.mulaiScanIn || '00:00') && h <= (tt.akhirScanIn || '23:59');
+          const t = getJktTime(l.timestamp);
+          return t >= (tt.mulaiScanIn || '00:00') && t <= (tt.akhirScanIn || '23:59');
         })());
 
         let targetOut = dayLogs;
         if (isO) {
-          const nextDStr = dateFormatter.format(new Date(cd.getTime() + 86400000));
+          const tomorrow = new Date(cd); tomorrow.setDate(tomorrow.getDate() + 1);
+          const nextDStr = dateFormatter.format(tomorrow);
           targetOut = logsMap.get(`${emp.id}_${nextDStr}`) || [];
         }
 
         const oL = [...targetOut].reverse().find(l => l.isManual || (() => {
-          const h = timeFormatter.format(l.timestamp);
-          return h >= (tt.mulaiScanOut || '00:00') && h <= (tt.akhirScanOut || '23:59');
+          const t = getJktTime(l.timestamp);
+          return t >= (tt.mulaiScanOut || '00:00') && t <= (tt.akhirScanOut || '23:59');
         })());
 
         if (iL || oL) {
           tH++; let late = false, early = false;
           if (iL && tt.jamMasuk) {
-            const hStr = timeFormatter.format(iL.timestamp);
+            const hStr = getJktTime(iL.timestamp);
             const [hIdx1, mIdx1] = hStr.split(':').map(Number);
             const [h, m] = tt.jamMasuk.split(/[:.]/).map(Number);
-            if ((hIdx1 * 60 + mIdx1) - (h * 60 + m) > 5) late = true;
-          } else if (!iL && oL && pL > 5) late = true;
+            if ((hIdx1 * 60 + mIdx1) - (h * 60 + m) > 5) {
+              late = true;
+              console.log(`[DEBUG] LATE: ${emp.name} | Date: ${dateStr} | Scan: ${hStr} | Target: ${tt.jamMasuk}`);
+            }
+          } else if (!iL && oL) {
+             late = true;
+          }
 
           if (oL && tt.jamPulang) {
-            const hStr = timeFormatter.format(oL.timestamp);
+            const hStr = getJktTime(oL.timestamp);
             const [hIdx2, mIdx2] = hStr.split(':').map(Number);
-            const [h, m] = tt.jamPulang.split(/[:.]/).map(Number); const ha = isO ? h + 24 : h;
+            const [h, m] = tt.jamPulang.split(/[:.]/).map(Number); 
+            const ha = isO ? h + 24 : h;
             let ah = hIdx2; if (isO) ah += 24;
-            if ((ha * 60 + m) - (ah * 60 + mIdx2) > 5) early = true;
-          } else if (!oL && iL && pE > 5) early = true;
+            if ((ha * 60 + m) - (ah * 60 + mIdx2) > 5) {
+              early = true;
+              console.log(`[DEBUG] EARLY: ${emp.name} | Date: ${dateStr} | Scan: ${hStr} | Target: ${tt.jamPulang}`);
+            }
+          } else if (!oL && iL) {
+             // Jika baru scan masuk tapi belum scan pulang:
+             // Anggap "Tidak Disiplin" (early = true) agar honor dasar (10rb) muncul.
+             // Nanti kalau sudah scan pulang dengan benar, otomatis jadi dD (Disiplin).
+             early = true;
+          }
 
           if (!late && !early) dD++; else nD++;
         }
       }
-      cd.setDate(cd.getDate() + 1);
+      cdLoop.setDate(cdLoop.getDate() + 1);
     }
 
     const rB = emp.isSertifikasi ? rS : rU;
@@ -1251,7 +1323,14 @@ app.get('/api/honor/recap', async (req, res) => {
       rateLate: rL
     });
   }
-  res.json(results);
+  res.json({ 
+    summary: { 
+      totalNetto: results.reduce((acc, r) => acc + r.netto, 0),
+      totalDisciplined: results.reduce((acc, r) => acc + r.disciplinedDays, 0),
+      totalNonDisciplined: results.reduce((acc, r) => acc + r.nonDisciplinedDays, 0),
+    },
+    data: results 
+  });
 });
 
 // Endpoint untuk mendapatkan daftar pegawai yang BELUM HADIR (Tidak ada log tap jari padahal ada jadwal)

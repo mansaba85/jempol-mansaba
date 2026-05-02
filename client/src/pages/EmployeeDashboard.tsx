@@ -159,6 +159,41 @@ const EmployeeDashboard = () => {
            ) : (
              <div className="text-center py-20 text-slate-400 font-medium italic">Tidak ada data</div>
            )}
+           
+           {/* Honor Summary Footer */}
+           {data?.summary && (
+             <div className="px-4 mt-8 mb-10">
+               <div className="bg-white rounded-3xl p-6 shadow-xl shadow-slate-200/50 border border-slate-100">
+                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 border-b border-slate-50 pb-2">Estimasi Honor Bulan Ini</h3>
+                  
+                  <div className="space-y-3">
+                     <div className="flex justify-between items-center">
+                        <span className="text-xs font-bold text-slate-500">Jumlah Honor (Bruto)</span>
+                        <span className="text-sm font-black text-slate-800 tabular-nums">
+                           Rp {new Intl.NumberFormat('id-ID').format(data.summary.totalAmount || 0)}
+                        </span>
+                     </div>
+                     
+                     <div className="flex justify-between items-center text-rose-500">
+                        <span className="text-xs font-bold">Potongan Voucher</span>
+                        <span className="text-sm font-black tabular-nums">
+                           - Rp {new Intl.NumberFormat('id-ID').format(data.summary.voucherNominal || 0)}
+                        </span>
+                     </div>
+                     
+                     <div className="pt-3 border-t border-slate-100 flex justify-between items-center">
+                        <span className="text-sm font-black text-slate-800">Total Honor Diterima</span>
+                        <div className="text-right">
+                           <span className="text-xl font-black text-emerald-600 tabular-nums block leading-none">
+                              Rp {new Intl.NumberFormat('id-ID').format(data.summary.netto || 0)}
+                           </span>
+                           <span className="text-[8px] font-bold text-emerald-500/60 uppercase tracking-tighter">Netto After Voucher</span>
+                        </div>
+                     </div>
+                  </div>
+               </div>
+             </div>
+           )}
         </div>
       </div>
     );

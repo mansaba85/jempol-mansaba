@@ -115,7 +115,24 @@ const AttendancePage = () => {
                         <span className="text-sm font-semibold text-slate-800">{format(new Date(log.timestamp), 'dd MMM yyyy')}</span>
                         <div className="flex items-center gap-1.5 mt-1 text-blue-600">
                           <i className="fa-regular fa-clock text-xs"></i>
-                          <span className="text-xs font-semibold">{format(new Date(log.timestamp), 'HH:mm:ss')}</span>
+                          <span className="text-xs font-semibold">
+                            {(() => {
+                              const d = new Date(log.timestamp);
+                              const s = d.toLocaleString('en-GB', { timeZone: 'Asia/Jakarta' });
+                              const m = s.match(/(\d+)\/(\d+)\/(\d+), (\d+):(\d+):(\d+)/);
+                              if (!m) return "00:00:00";
+                              const isOld = parseInt(m[3]) < 2026 || (parseInt(m[3]) === 2026 && parseInt(m[2]) < 5);
+                              
+                              if (isOld) {
+                                const h = d.getUTCHours().toString().padStart(2, '0');
+                                const min = d.getUTCMinutes().toString().padStart(2, '0');
+                                const sec = d.getUTCSeconds().toString().padStart(2, '0');
+                                return `${h}:${min}:${sec}`;
+                              } else {
+                                return `${m[4]}:${m[5]}:${m[6]}`;
+                              }
+                            })()}
+                          </span>
                         </div>
                       </div>
                     </td>
