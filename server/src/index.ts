@@ -1500,32 +1500,21 @@ app.listen(Number(port), '0.0.0.0', () => {
   console.log(`🚀 Server ready at http://0.0.0.0:${port}`);
 });
 
-// --- AUTO SYNC BACKGROUND TASK (EVERY SHARP HOUR) ---
+// --- AUTO SYNC BACKGROUND TASK (EVERY 5 MINUTES) ---
 const initAutoSync = () => {
-  const startSync = async () => {
-    console.log(`[AutoSync] Starting automatic synchronization at sharp hour: ${new Date().toLocaleString()}...`);
-    await runSyncAll();
-  };
+  const syncInterval = 5 * 60 * 1000; // 5 Menit
 
-  const scheduleNext = () => {
-    const now = new Date();
-    const nextHour = new Date(now);
-    nextHour.setHours(now.getHours() + 1, 0, 0, 0);
-    const msToNext = nextHour.getTime() - now.getTime();
-
-    console.log(`[AutoSync] Next sync scheduled in ${Math.round(msToNext / 60000)} minutes (at ${nextHour.toLocaleTimeString()}).`);
-
-    setTimeout(async () => {
-      await startSync();
-      // Setelah sinkronisasi pertama di jam tepat, ulangi setiap jam
-      setInterval(startSync, 3600000);
-    }, msToNext);
-  };
-
-  // Tunggu sebentar agar server stabil sebelum menghitung jadwal
   setTimeout(() => {
-    console.log('[AutoSync] Initializing background sync scheduler...');
-    scheduleNext();
+    console.log(`[AutoSync] Initializing background sync scheduler (Every ${syncInterval / 60000} mins)...`);
+    
+    // Jalankan pertama kali saat server start (setelah delay 10 detik)
+    runSyncAll();
+
+    // Kemudian jalankan rutin setiap 5 menit
+    setInterval(async () => {
+      console.log(`[AutoSync] Starting automatic synchronization: ${new Date().toLocaleString()}...`);
+      await runSyncAll();
+    }, syncInterval);
   }, 10000);
 };
 initAutoSync();
