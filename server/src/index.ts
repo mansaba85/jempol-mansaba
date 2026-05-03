@@ -919,7 +919,7 @@ app.get('/api/reports/detailed', async (req, res) => {
           const ci = ep.shiftpattern.shiftpatternitem.find(i => i.dayNumber === dy);
           if (ci?.timetable) {
             let dow = cd.getDay(); if (dow === 0) dow = 7;
-            const tD = (ci.timetable.days || "1,2,3,4,5,6").split(',').map(Number);
+            const tD = (ci.timetable.days || "0,1,2,3,4,5,6,7").split(',').map(Number);
             if (tD.includes(cd.getDay()) || tD.includes(dow)) tt = ci.timetable;
           }
         }
@@ -1094,7 +1094,7 @@ app.get('/api/reports/monthly', async (req, res) => {
             const ci = ep.shiftpattern.shiftpatternitem.find(i => i.dayNumber === dy);
             if (ci?.timetable) {
               let dow = cd.getDay(); if (dow === 0) dow = 7;
-              const tD = (ci.timetable.days || "1,2,3,4,5,6").split(',').map(Number);
+              const tD = (ci.timetable.days || "0,1,2,3,4,5,6,7").split(',').map(Number);
               if (tD.includes(cd.getDay()) || tD.includes(dow)) tt = ci.timetable;
             }
           }
@@ -1237,7 +1237,7 @@ app.get('/api/honor/recap', async (req, res) => {
             // Cek apakah hari ini (Senin-Minggu) aktif di jadwal tersebut
             let dow = dC.getDay(); // 0=Minggu, 1=Senin...
             const dowFixed = (dow === 0 ? 7 : dow); // Paksa 7=Minggu
-            const validDays = (ci.timetable.days || "1,2,3,4,5,6").split(',').map(Number);
+            const validDays = (ci.timetable.days || "0,1,2,3,4,5,6,7").split(',').map(Number);
             
             if (validDays.includes(dow) || validDays.includes(dowFixed)) {
               tt = ci.timetable;
