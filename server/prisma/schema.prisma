@@ -196,3 +196,16 @@ model user {
   role      String   @default("ADMIN")
   createdAt DateTime @default(now())
 }
+
+model holiday {
+  id                 Int      @id @default(autoincrement())
+  name               String
+  date               DateTime
+  isGlobal           Boolean  @default(true)
+  affectedRoles      String?  // Comma separated roles
+  affectedCategories String?  // Comma separated category IDs
+  affectedPatterns   String?  // Comma separated Pattern IDs
+  createdAt          DateTime @default(now())
+
+  @@index([date], map: "Holiday_date_idx")
+}

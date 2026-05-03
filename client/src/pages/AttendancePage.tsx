@@ -13,6 +13,7 @@ const AttendancePage = () => {
   // Real dates for backend
   const [queryStart, setQueryStart] = useState('');
   const [queryEnd, setQueryEnd] = useState('');
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -37,6 +38,35 @@ const AttendancePage = () => {
     fetchLogs();
   };
 
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedIds(logs.map(l => l.id));
+    } else {
+      setSelectedIds([]);
+    }
+  };
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (!window.confirm(`Hapus ${selectedIds.length} log presensi terpilih secara permanen?`)) return;
+
+    setLoading(true);
+    try {
+      await axios.delete('/api/attendance/bulk', { data: { ids: selectedIds } });
+      toast.success(`${selectedIds.length} log presensi dihapus`);
+      setSelectedIds([]);
+      fetchLogs();
+    } catch (err) {
+      toast.error("Gagal menghapus log terpilih");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Toaster />
@@ -45,6 +75,16 @@ const AttendancePage = () => {
            <h2 className="text-2xl font-semibold text-slate-800">Log Presensi</h2>
            <p className="text-sm text-slate-500 mt-1">Daftar riwayat scan kehadiran seluruh pegawai secara real-time.</p>
         </div>
+        
+        {selectedIds.length > 0 && (
+          <button 
+            onClick={handleBulkDelete}
+            className="flex items-center gap-2 px-6 py-2.5 bg-rose-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-rose-100 hover:bg-rose-700 transition-all"
+          >
+            <i className="fa-solid fa-trash-can"></i>
+            Hapus {selectedIds.length} Terpilih
+          </button>
+        )}
       </header>
 
       <div className="mansaba-card p-4 md:p-6">
@@ -93,6 +133,14 @@ const AttendancePage = () => {
           <table className="mansaba-table">
             <thead>
               <tr>
+                <th className="w-12 text-center">
+                  <input 
+                    type="checkbox" 
+                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    onChange={handleSelectAll}
+                    checked={logs.length > 0 && selectedIds.length === logs.length}
+                  />
+                </th>
                 <th className="w-48">Waktu Scan</th>
                 <th>Nama Pegawai</th>
                 <th className="text-center">Tipe</th>
@@ -109,7 +157,15 @@ const AttendancePage = () => {
                 const empName = log.employee?.name || 'Tidak Diketahui';
                 const initial = empName.charAt(0).toUpperCase();
                 return (
-                  <tr key={log.id} className="hover:bg-slate-50 transition-colors">
+                  <tr key={log.id} className={`hover:bg-slate-50 transition-colors ${selectedIds.includes(log.id) ? 'bg-blue-50/50' : ''}`}>
+                    <td className="text-center py-4">
+                      <input 
+                        type="checkbox" 
+                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        checked={selectedIds.includes(log.id)}
+                        onChange={() => toggleSelect(log.id)}
+                      />
+                    </td>
                     <td className="py-4">
                       <div className="flex flex-col">
                         <span className="text-sm font-semibold text-slate-800">{format(new Date(log.timestamp), 'dd MMM yyyy')}</span>
@@ -182,7 +238,7 @@ const AttendancePage = () => {
                 );
               }) : (
                 <tr>
-                  <td colSpan={5} className="py-20 text-center">
+                  <td colSpan={6} className="py-20 text-center">
                     <div className="flex flex-col items-center justify-center text-slate-400">
                       <i className="fa-solid fa-folder-open text-4xl mb-3"></i>
                       <p className="text-sm font-medium">Tidak ada log presensi yang ditemukan.</p>

@@ -24,6 +24,7 @@ const RecapPage = () => {
   
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [settings, setSettings] = useState<any>({});
 
   const fetchRecap = useCallback(async () => {
     setLoading(true);
@@ -44,8 +45,166 @@ const RecapPage = () => {
     }
   }, [selectedMonth, selectedYear]);
 
+  const fetchSettings = async () => {
+    try {
+      const res = await axios.get('/api/settings');
+      const sMap: any = {};
+      res.data.forEach((s: any) => { sMap[s.key] = s.value; });
+      setSettings(sMap);
+    } catch (err) { console.error(err); }
+  };
+
+  const handlePrint = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+    const periode = `${monthNames[selectedMonth-1].toUpperCase()} ${selectedYear}`;
+
+    // Ambil data dari settings
+    const namaKepala = settings.headmaster_name || "...........................";
+    const nipKepala = settings.headmaster_nip || "...........................";
+    const namaBendahara = settings.treasurer_name || "...........................";
+    const nipBendahara = settings.treasurer_nip || "...........................";
+
+    const html = `
+      <html>
+        <head>
+          <title>Laporan_Rekap_Presensi_${periode}</title>
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+            body { 
+              font-family: 'Inter', sans-serif; 
+              padding: 40px; 
+              color: #1a1a1a;
+              line-height: 1.5;
+            }
+            .header { 
+              text-align: center; 
+              margin-bottom: 40px; 
+              border-bottom: 3px double #000; 
+              padding-bottom: 20px;
+            }
+            .header h1 { margin: 0; font-size: 20px; font-weight: 800; text-transform: uppercase; }
+            .header h2 { margin: 5px 0; font-size: 16px; font-weight: 600; }
+            .header p { margin: 0; font-size: 12px; color: #666; }
+            
+            .info-table { width: 100%; margin-bottom: 20px; font-size: 12px; font-weight: 600; }
+            
+            table.main-table { 
+              width: 100%; 
+              border-collapse: collapse; 
+              margin-top: 10px;
+              font-size: 11px;
+            }
+            table.main-table th { 
+              background: #f8fafc; 
+              border: 1px solid #000; 
+              padding: 12px 8px; 
+              text-align: center;
+              font-weight: 800;
+              text-transform: uppercase;
+            }
+            table.main-table td { 
+              border: 1px solid #000; 
+              padding: 10px 8px; 
+              text-align: center;
+            }
+            .text-left { text-align: left !important; }
+            .font-bold { font-weight: 800; }
+            .bg-gray { background: #f1f5f9; }
+            
+            .footer { 
+              margin-top: 50px; 
+              display: flex; 
+              justify-content: space-between;
+              page-break-inside: avoid;
+            }
+            .signature { text-align: center; width: 250px; }
+            .signature p { margin: 0; font-size: 12px; }
+            .signature .name { margin-top: 80px; font-weight: 800; text-decoration: underline; font-size: 13px; }
+            
+            @media print {
+              body { padding: 0; }
+              @page { margin: 1.5cm; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Rekapitulasi Kehadiran & Kedisiplinan Pegawai</h1>
+            <h2>MAN 1 BANYUPUTIH BATANG</h2>
+            <p>Alamat: Jl. Raya Banyuputih, Kec. Banyuputih, Kab. Batang, Jawa Tengah</p>
+          </div>
+
+          <table class="info-table">
+            <tr>
+              <td style="width: 100px">PERIODE</td>
+              <td>: ${periode}</td>
+            </tr>
+          </table>
+
+          <table class="main-table">
+            <thead>
+              <tr>
+                <th>PIN</th>
+                <th class="text-left">NAMA LENGKAP</th>
+                <th>JADWAL</th>
+                <th>HADIR</th>
+                <th>ALPA</th>
+                <th>TELAT</th>
+                <th>P. CEPAT</th>
+                <th>TOTAL JAM</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredData.map(row => `
+                <tr>
+                  <td>#${String(row.employeeId).padStart(4, '0')}</td>
+                  <td class="text-left font-bold">${row.employeeName}</td>
+                  <td>${row.totalWorkDays}</td>
+                  <td class="bg-gray">${row.totalDays}</td>
+                  <td class="${row.totalAbsent > 0 ? 'font-bold' : ''}">${row.totalAbsent}</td>
+                  <td>${row.totalLate}m</td>
+                  <td>${row.totalEarly}m</td>
+                  <td class="font-bold">${Math.floor(row.totalWorkDuration / 60)}j ${row.totalWorkDuration % 60}m</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <div class="footer">
+            <div class="signature">
+              <p>Mengetahui,</p>
+              <p>Kepala Madrasah</p>
+              <p class="name">${namaKepala}</p>
+              <p>NIP. ${nipKepala}</p>
+            </div>
+            <div class="signature">
+              <p>Batang, ${format(new Date(), 'dd MMMM yyyy')}</p>
+              <p>Bendahara,</p>
+              <p class="name">${namaBendahara}</p>
+              <p>NIP. ${nipBendahara}</p>
+            </div>
+          </div>
+
+          <script>
+            window.onload = () => {
+              window.print();
+              setTimeout(() => window.close(), 500);
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
   useEffect(() => {
     fetchRecap();
+    fetchSettings();
   }, [fetchRecap]);
 
   const filteredData = recapData.filter(item => 
@@ -93,7 +252,7 @@ const RecapPage = () => {
                  {[2024,2025,2026].map(y=><option key={y} value={y} className="bg-white text-slate-800">{y}</option>)}
               </select>
            </div>
-           <button onClick={()=>window.print()} className="w-10 h-10 bg-white/[0.02] text-blue-600 border border-blue-200 rounded-[1.5rem] flex items-center justify-center shadow-sm hover:bg-primary hover:text-slate-800 transition-colors">
+           <button onClick={handlePrint} className="w-10 h-10 bg-white/[0.02] text-blue-600 border border-blue-200 rounded-[1.5rem] flex items-center justify-center shadow-sm hover:bg-primary hover:text-slate-800 transition-colors">
               <Printer size={24} className="transition-transform" />
            </button>
         </div>
@@ -144,10 +303,12 @@ const RecapPage = () => {
                   <tr>
                      <th className="mansaba-th text-center w-32 border-slate-200">UNIT_ID</th>
                      <th className="mansaba-th px-10 border-slate-200">PERSONNEL_CORE</th>
-                     <th className="mansaba-th text-center border-slate-200">FREQ_SESSIONS</th>
-                     <th className="mansaba-th text-center border-slate-200 text-rose-400">LATENCY (MIN)</th>
-                     <th className="mansaba-th text-center border-slate-200 text-amber-400">EARLY_EXIT (MIN)</th>
-                     <th className="mansaba-th text-right px-12 border-slate-200">PERFORMANCE_TAG</th>
+                     <th className="mansaba-th text-center border-slate-200">JADWAL/HADIR</th>
+                     <th className="mansaba-th text-center border-slate-200 text-rose-400">ALPA</th>
+                     <th className="mansaba-th text-center border-slate-200 text-rose-500">TELAT (MIN)</th>
+                     <th className="mansaba-th text-center border-slate-200 text-amber-500">P. CEPAT (MIN)</th>
+                     <th className="mansaba-th text-center border-slate-200 text-emerald-600">TOTAL JAM</th>
+                     <th className="mansaba-th text-right px-12 border-slate-200">STATUS</th>
                   </tr>
                </thead>
                <tbody className="divide-y divide-white/[0.02]">
@@ -170,32 +331,50 @@ const RecapPage = () => {
                            </div>
                         </td>
                         <td className="mansaba-td text-center">
-                           <div className="inline-flex items-center gap-3 px-5 py-2 bg-white rounded-xl border border-slate-200 shadow-sm">
-                              <span className="text-xs font-medium text-slate-800">{row.totalDays}</span>
-                              <span className="text-[9px] font-medium text-slate-500">SESSIONS</span>
+                           <div className="flex flex-col items-center">
+                              <span className="text-xs font-bold text-slate-800">{row.totalWorkDays} / {row.totalDays}</span>
+                              <span className="text-[8px] text-slate-400 uppercase font-black tracking-tighter">Hari Kerja</span>
                            </div>
                         </td>
                         <td className="mansaba-td text-center">
-                           <span className={`text-xs  font-medium ${row.totalLate > 0 ? 'text-rose-500' : 'text-slate-500'}`}>
-                              {row.totalLate > 0 ? row.totalLate : '0'}
+                           <span className={`text-xs font-black ${row.totalAbsent > 0 ? 'text-rose-600' : 'text-slate-300'}`}>
+                              {row.totalAbsent}
                            </span>
                         </td>
                         <td className="mansaba-td text-center">
-                           <span className={`text-xs  font-medium ${row.totalEarly > 0 ? 'text-amber-500' : 'text-slate-500'}`}>
-                              {row.totalEarly > 0 ? row.totalEarly : '0'}
+                           <span className={`text-xs font-bold ${row.totalLate > 0 ? 'text-rose-500' : 'text-slate-400'}`}>
+                              {row.totalLate}
                            </span>
+                        </td>
+                        <td className="mansaba-td text-center">
+                           <span className={`text-xs font-bold ${row.totalEarly > 0 ? 'text-amber-500' : 'text-slate-400'}`}>
+                              {row.totalEarly}
+                           </span>
+                        </td>
+                        <td className="mansaba-td text-center">
+                           <div className="flex flex-col items-center">
+                              <span className="text-xs font-black text-emerald-600">
+                                 {Math.floor(row.totalWorkDuration / 60)}j {row.totalWorkDuration % 60}m
+                              </span>
+                              <span className="text-[8px] text-emerald-400 uppercase font-black tracking-tighter">Efektif</span>
+                           </div>
                         </td>
                         <td className="mansaba-td text-right px-12">
                            <div className="flex items-center justify-end gap-3">
-                            {row.totalDays > 20 ? (
-                                <div className="flex items-center gap-2 text-emerald-400 bg-emerald-400/10 px-4 py-2 rounded-lg border border-emerald-400/20 shadow-[0_0_15px_rgba(16,185,129,0.1)]">
+                            {row.totalAbsent === 0 && row.totalLate === 0 ? (
+                                <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-4 py-2 rounded-lg border border-emerald-100">
                                   <ShieldCheck size={12} />
-                                  <span className="text-[9px] font-medium">LOYAL_PROTOCOL</span>
+                                  <span className="text-[9px] font-black uppercase tracking-widest">EXCELLENT</span>
+                                </div>
+                            ) : row.totalAbsent > 3 ? (
+                                <div className="flex items-center gap-2 text-rose-600 bg-rose-50 px-4 py-2 rounded-lg border border-rose-100">
+                                  <Activity size={12} />
+                                  <span className="text-[9px] font-black uppercase tracking-widest">CRITICAL</span>
                                 </div>
                             ) : (
-                                <div className="flex items-center gap-2 text-slate-500 bg-white/[0.02] px-4 py-2 rounded-lg border border-slate-200">
+                                <div className="flex items-center gap-2 text-slate-500 bg-slate-50 px-4 py-2 rounded-lg border border-slate-100">
                                   <Clock size={12} />
-                                  <span className="text-[9px] font-medium">STANDARD</span>
+                                  <span className="text-[9px] font-black uppercase tracking-widest">STABLE</span>
                                 </div>
                             )}
                            </div>
@@ -203,7 +382,7 @@ const RecapPage = () => {
                       </tr>
                   )) : (
                       <tr>
-                        <td colSpan={6} className="py-48 text-center text-slate-500">
+                        <td colSpan={8} className="py-48 text-center text-slate-500">
                            <div className="flex flex-col items-center gap-8 opacity-5">
                               <FileText size={80} />
                               <p className="text-[12px] font-medium tracking-[0.6em]">NO_RECORDS_INDEXED</p>
@@ -216,58 +395,9 @@ const RecapPage = () => {
          </div>
       </div>
 
-      {/* PRINT VERSION - Standard Official Format */}
-      <div className="hidden print:block fixed inset-0 bg-white p-12 text-black">
-          <div className="text-center mb-10 border-b-4 border-black pb-8">
-              <h1 className="text-lg font-medium font-medium">Rekapitulasi Kehadiran & Kedisiplinan</h1>
-              <h2 className="text-lg font-medium mt-2">MAN 1 BANYUPUTIH BATANG</h2>
-              <p className="text-[10px] font-medium mt-4 tracking-[0.3em] text-slate-500">PERIODE AUDIT: {format(new Date(selectedYear, selectedMonth-1, 1), 'MMMM yyyy')}</p>
-          </div>
-          <table className="w-full border-collapse border-2 border-black text-[11px]">
-             <thead>
-                <tr className="bg-slate-100 italic">
-                  <th className="border-2 border-black p-4 text-center font-medium">PIN</th>
-                  <th className="border-2 border-black p-4 text-left font-medium">Nama Lengkap Personel</th>
-                  <th className="border-2 border-black p-4 text-center font-medium">Total Hadir</th>
-                  <th className="border-2 border-black p-4 text-center font-medium">Lambat (Menit)</th>
-                  <th className="border-2 border-black p-4 text-center font-medium">Awal Pulang (Menit)</th>
-                </tr>
-             </thead>
-             <tbody>
-                {filteredData.map(row => (
-                   <tr key={row.employeeId}>
-                      <td className="border-2 border-black p-3 text-center">#{String(row.employeeId).padStart(4, '0')}</td>
-                      <td className="border-2 border-black p-3 font-medium">{row.employeeName}</td>
-                      <td className="border-2 border-black p-3 text-center font-medium">{row.totalDays} HARI</td>
-                      <td className="border-2 border-black p-3 text-center">{row.totalLate}</td>
-                      <td className="border-2 border-black p-3 text-center">{row.totalEarly}</td>
-                   </tr>
-                ))}
-             </tbody>
-          </table>
-          <div className="flex justify-between items-start mt-24 px-16">
-              <div className="text-center">
-                 <p className="mb-24 font-medium">Mengetahui,<br/>Kepala Madrasah</p>
-                 <p className="underline font-medium text-sm">Drs. H. MUKHLISIN, M.Pd</p>
-                 <p className="text-[11px] font-medium mt-1">NIP. 196805121994031002</p>
-              </div>
-              <div className="text-center">
-                 <p className="mb-24 font-medium">Bendahara,</p>
-                 <p className="underline font-medium text-sm">NURUL HIKMAH, S.Pd</p>
-                 <p className="text-[11px] font-medium mt-1">NIP. 198204152005012003</p>
-              </div>
-          </div>
-      </div>
-
       <style>{`
         @media print {
-          @page { size: portrait; margin: 0; }
-          body { background: white !important; color: black !important; -webkit-print-color-adjust: exact; }
-          #root > div > main { margin: 0 !important; padding: 0 !important; }
-          div:not(.print\:block), header, nav, aside, footer { display: none !important; }
-          .print\:block { display: block !important; position: static !important; }
-          table { width: 100% !important; border-collapse: collapse !important; }
-          th, td { border: 2px solid black !important; }
+          display: none !important;
         }
       `}</style>
     </div>

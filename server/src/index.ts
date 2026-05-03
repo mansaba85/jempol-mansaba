@@ -885,8 +885,11 @@ app.get('/api/reports/detailed', async (req, res) => {
     if (!emp) return res.status(404).json({ error: 'Pegawai tidak ditemukan' });
 
     const logs = await prisma.attendance.findMany({
-      where: { employeeId: empId, timestamp: { gte: start, lte: new Date(end.getTime() + 86400000) } },
       orderBy: { timestamp: 'asc' }
+    });
+
+    const hList = await prisma.holiday.findMany({
+      where: { date: { gte: start, lte: end } }
     });
 
     const sysS = await prisma.systemsetting.findMany();
@@ -917,10 +920,25 @@ app.get('/api/reports/detailed', async (req, res) => {
         if (diff >= 0) {
           const dy = (diff % ep.shiftpattern.cycleDays) + 1;
           const ci = ep.shiftpattern.shiftpatternitem.find(i => i.dayNumber === dy);
-          if (ci?.timetable) {
-            tt = ci.timetable;
+          if (ci?.timetable) tt = ci.timetable;
+        }
+      }
+
+      // CHECK HOLIDAY
+      const dayHoliday = hList.find(h => dateFormatter.format(h.date) === dateStr);
+      if (dayHoliday) {
+        let isAffected = false;
+        if (dayHoliday.isGlobal) isAffected = true;
+        else {
+          const roles = (dayHoliday.affectedRoles || '').split(',').map(s => s.trim().toUpperCase());
+          const patterns = (dayHoliday.affectedPatterns || '').split(',').map(s => s.trim());
+          const currentPatternId = String(emp.employeepattern[0]?.patternId || '');
+          
+          if (roles.includes(String(emp.role || '').toUpperCase()) || patterns.includes(currentPatternId)) {
+            isAffected = true;
           }
         }
+        if (isAffected) tt = null; 
       }
 
       const dLogs = logs.filter(l => dateFormatter.format(l.timestamp) === dateStr);
@@ -1074,11 +1092,12 @@ app.get('/api/reports/monthly', async (req, res) => {
     const sMap = new Map(sys.map(s => [s.key, s.value]));
     const pL = parseInt(sMap.get('penalty_late_minutes') || '0');
     const pE = parseInt(sMap.get('penalty_early_minutes') || '0');
+    const hList = await prisma.holiday.findMany();
 
     const results = [];
     for (const emp of employees) {
       const logs = await prisma.attendance.findMany({ where: { employeeId: emp.id, timestamp: { gte: start, lte: new Date(end.getTime() + 86400000) } } });
-      let totalDays = 0, totalLate = 0, totalEarly = 0;
+      let totalDays = 0, totalLate = 0, totalEarly = 0, totalWorkDays = 0, totalWorkDuration = 0;
       let cd = new Date(start);
       while (cd <= end) {
         const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(cd);
@@ -1090,12 +1109,29 @@ app.get('/api/reports/monthly', async (req, res) => {
           if (diff >= 0) {
             const dy = (diff % ep.shiftpattern.cycleDays) + 1;
             const ci = ep.shiftpattern.shiftpatternitem.find(i => i.dayNumber === dy);
-            if (ci?.timetable) {
-              tt = ci.timetable;
-            }
+            if (ci?.timetable) tt = ci.timetable;
           }
         }
+
+        // CHECK HOLIDAY
+        const dayHoliday = hList.find(h => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(h.date) === dateStr);
+        if (dayHoliday) {
+          let isAffected = false;
+          if (dayHoliday.isGlobal) isAffected = true;
+          else {
+            const roles = (dayHoliday.affectedRoles || '').split(',').map(s => s.trim().toUpperCase());
+            const patterns = (dayHoliday.affectedPatterns || '').split(',').map(s => s.trim());
+            const currentPatternId = String(emp.employeepattern[0]?.patternId || '');
+
+            if (roles.includes(String(emp.role || '').toUpperCase()) || patterns.includes(currentPatternId)) {
+              isAffected = true;
+            }
+          }
+          if (isAffected) tt = null;
+        }
+
         if (tt) {
+          totalWorkDays++;
           const isO = tt.jamPulang < tt.jamMasuk;
           const iLog = logs.find(l => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(l.timestamp) === dateStr && (l.isManual || (() => {
             const h = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(l.timestamp);
@@ -1122,12 +1158,27 @@ app.get('/api/reports/monthly', async (req, res) => {
               const d2 = (h2a * 60 + m2) - (ah * 60 + mIdx2);
               if (d2 > 0) totalEarly += d2;
             } else if (iLog && pE > 0) totalEarly += pE;
+
+            if (iLog && oLog) {
+              const dur = Math.round((new Date(oLog.timestamp).getTime() - new Date(iLog.timestamp).getTime()) / 60000);
+              if (dur > 0) totalWorkDuration += dur;
+            }
           }
         }
         // JIKA TT NULL (Bukan hari kerja), diabaikan sesuai permintaan
         cd.setDate(cd.getDate() + 1);
       }
-      results.push({ employeeId: emp.id, employeeName: emp.name, totalDays, totalLate, totalEarly });
+      results.push({ 
+        employeeId: emp.id, 
+        employeeName: emp.name, 
+        totalDays, 
+        totalLate, 
+        totalEarly,
+        totalWorkDays,
+        totalAbsent: Math.max(0, totalWorkDays - totalDays),
+        totalWorkDuration,
+        role: emp.role || 'GURU'
+      });
     }
     res.json(results);
   } catch (error) { res.status(500).json({ error: 'Gagal ringkasan' }); }
@@ -1146,6 +1197,10 @@ app.get('/api/honor/recap', async (req, res) => {
   
   const allLogs = await prisma.attendance.findMany({ 
     where: { timestamp: { gte: start, lte: new Date(end.getTime() + 86400000) } } 
+  });
+
+  const hList = await prisma.holiday.findMany({
+    where: { date: { gte: start, lte: end } }
   });
 
   // Pre-process logs into a Map for O(1) lookup
@@ -1233,6 +1288,23 @@ app.get('/api/honor/recap', async (req, res) => {
             tt = ci.timetable;
           }
         }
+      }
+
+      // CHECK HOLIDAY
+      const dayHoliday = hList.find(h => dateFormatter.format(h.date) === dateStr);
+      if (dayHoliday) {
+        let isAffected = false;
+        if (dayHoliday.isGlobal) isAffected = true;
+        else {
+          const roles = (dayHoliday.affectedRoles || '').split(',').map(s => s.trim().toUpperCase());
+          const patterns = (dayHoliday.affectedPatterns || '').split(',').map(s => s.trim());
+          const currentPatternId = String(emp.employeepattern[0]?.patternId || '');
+
+          if (roles.includes(String(emp.role || '').toUpperCase()) || patterns.includes(currentPatternId)) {
+            isAffected = true;
+          }
+        }
+        if (isAffected) tt = null;
       }
 
       if (tt) {
@@ -1406,6 +1478,40 @@ app.get('/api/reports/absent', async (req, res) => {
   }
 });
 
+app.delete('/api/attendance/bulk', async (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids)) return res.status(400).json({ error: 'IDs harus berupa array' });
+
+  try {
+    const deleted = await prisma.attendance.deleteMany({
+      where: {
+        id: { in: ids.map(Number) }
+      }
+    });
+    res.json({ success: true, count: deleted.count });
+  } catch (err) {
+    res.status(500).json({ error: 'Gagal menghapus log terpilih' });
+  }
+});
+
+app.delete('/api/logs/purge', async (req, res) => {
+  const { beforeDate } = req.query;
+  if (!beforeDate) return res.status(400).json({ error: 'Tanggal batas diperlukan' });
+
+  try {
+    const deleted = await prisma.attendance.deleteMany({
+      where: {
+        timestamp: {
+          lt: new Date(String(beforeDate))
+        }
+      }
+    });
+    res.json({ success: true, count: deleted.count });
+  } catch (err) {
+    res.status(500).json({ error: 'Gagal menghapus log lama' });
+  }
+});
+
 // SETTINGS API
 app.get('/api/settings', async (req, res) => res.json(await prisma.systemsetting.findMany()));
 app.post('/api/settings', async (req, res) => {
@@ -1430,6 +1536,37 @@ app.post('/api/settings', async (req, res) => {
   res.json({ success: true });
 });
 
+app.get('/api/shift-patterns', async (req, res) => {
+  const patterns = await prisma.shiftpattern.findMany({ orderBy: { name: 'asc' } });
+  res.json(patterns);
+});
+
+// HOLIDAYS API
+app.get('/api/holidays', async (req, res) => {
+  const holidays = await prisma.holiday.findMany({ orderBy: { date: 'asc' } });
+  res.json(holidays);
+});
+
+app.post('/api/holidays', async (req, res) => {
+  const { id, name, date, isGlobal, affectedRoles, affectedCategories, affectedPatterns } = req.body;
+  if (id) {
+    await prisma.holiday.update({
+      where: { id: Number(id) },
+      data: { name, date: new Date(date), isGlobal, affectedRoles, affectedCategories, affectedPatterns }
+    });
+  } else {
+    await prisma.holiday.create({
+      data: { name, date: new Date(date), isGlobal, affectedRoles, affectedCategories, affectedPatterns }
+    });
+  }
+  res.json({ success: true });
+});
+
+app.delete('/api/holidays/:id', async (req, res) => {
+  await prisma.holiday.delete({ where: { id: Number(req.params.id) } });
+  res.json({ success: true });
+});
+
 app.get('/api/settings/backup', async (req, res) => {
   try {
     const data = {
@@ -1441,7 +1578,8 @@ app.get('/api/settings/backup', async (req, res) => {
       employeePatterns: await prisma.employeepattern.findMany(),
       attendances: await prisma.attendance.findMany(),
       devices: await prisma.device.findMany(),
-      settings: await prisma.systemsetting.findMany()
+      settings: await prisma.systemsetting.findMany(),
+      holidays: await prisma.holiday.findMany()
     };
     res.json(data);
   } catch (error) { res.status(500).json({ error: 'Gagal backup' }); }
@@ -1473,6 +1611,7 @@ app.post('/api/settings/restore', upload.single('backup'), async (req: any, res:
       if (data.attendances) await tx.attendance.createMany({ data: data.attendances });
       if (data.devices) await tx.device.createMany({ data: data.devices });
       if (data.settings) await tx.systemsetting.createMany({ data: data.settings });
+      if (data.holidays) await tx.holiday.createMany({ data: data.holidays.map((h: any) => ({ ...h, date: new Date(h.date), createdAt: new Date(h.createdAt) })) });
     });
     fs.unlinkSync(req.file.path);
     res.json({ success: true });
