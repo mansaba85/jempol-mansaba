@@ -1645,7 +1645,6 @@ app.post('/api/settings/restore', upload.single('backup'), async (req: any, res:
     res.status(500).json({ error: 'Gagal restore' }); 
   }
 });
-});
 
 // --- SERVE FRONTEND (Untuk Produksi/Docker) ---
 const clientDistPath = path.resolve(__dirname, '../../client/dist');
