@@ -1565,21 +1565,24 @@ app.post('/api/holidays', async (req, res) => {
 app.delete('/api/holidays/:id', async (req, res) => {
   await prisma.holiday.delete({ where: { id: Number(req.params.id) } });
   res.json({ success: true });
-});
-
-app.get('/api/settings/backup', async (req, res) => {
+}app.get('/api/settings/backup', async (req, res) => {
   try {
     const data = {
       employees: await prisma.employee.findMany(),
+      attendances: await prisma.attendance.findMany(),
       categories: await prisma.category.findMany(),
       timetables: await prisma.timetable.findMany(),
       patterns: await prisma.shiftpattern.findMany(),
       patternItems: await prisma.shiftpatternitem.findMany(),
       employeePatterns: await prisma.employeepattern.findMany(),
-      attendances: await prisma.attendance.findMany(),
+      employeeShifts: await prisma.employeeshift.findMany(),
       devices: await prisma.device.findMany(),
       settings: await prisma.systemsetting.findMany(),
-      holidays: await prisma.holiday.findMany()
+      holidays: await prisma.holiday.findMany(),
+      shifts: await prisma.shift.findMany(),
+      shiftGroups: await prisma.shiftgroup.findMany(),
+      masterSchedules: await prisma.masterschedule.findMany(),
+      honors: await prisma.honor.findMany()
     };
     res.json(data);
   } catch (error) { res.status(500).json({ error: 'Gagal backup' }); }
@@ -1589,7 +1592,9 @@ app.post('/api/settings/restore', upload.single('backup'), async (req: any, res:
   if (!req.file) return res.status(400).json({ error: 'No file' });
   try {
     const data = JSON.parse(fs.readFileSync(req.file.path, 'utf8'));
+    // Perpanjang timeout transaksi ke 30 detik
     await prisma.$transaction(async (tx) => {
+      // URUTAN PENGHAPUSAN (Dari yang punya FK ke yang tidak punya)
       await tx.attendance.deleteMany();
       await tx.honor.deleteMany();
       await tx.employeepattern.deleteMany();
@@ -1598,65 +1603,46 @@ app.post('/api/settings/restore', upload.single('backup'), async (req: any, res:
       await tx.shiftpattern.deleteMany();
       await tx.timetable.deleteMany();
       await tx.category.deleteMany();
+      await tx.shift.deleteMany();
+      await tx.shiftgroup.deleteMany();
+      await tx.masterschedule.deleteMany();
       await tx.employee.deleteMany();
       await tx.device.deleteMany();
       await tx.systemsetting.deleteMany();
+      await tx.holiday.deleteMany();
 
+      // URUTAN PENGISIAN (Dari yang tidak punya FK ke yang punya)
+      if (data.masterSchedules) await tx.masterschedule.createMany({ 
+        data: data.masterSchedules.map((ms: any) => ({ ...ms, startDate: ms.startDate ? new Date(ms.startDate) : null, endDate: ms.endDate ? new Date(ms.endDate) : null, createdAt: new Date(ms.createdAt) })) 
+      });
+      if (data.shiftGroups) await tx.shiftgroup.createMany({ data: data.shiftGroups.map((sg: any) => ({ ...sg, createdAt: new Date(sg.createdAt) })) });
+      if (data.shifts) await tx.shift.createMany({ data: data.shifts.map((s: any) => ({ ...s, createdAt: new Date(s.createdAt), updatedAt: new Date(s.updatedAt) })) });
+      
       if (data.employees) await tx.employee.createMany({ 
-        data: data.employees.map((e: any) => ({
-          ...e,
-          createdAt: new Date(e.createdAt),
-          updatedAt: new Date(e.updatedAt)
-        })) 
+        data: data.employees.map((e: any) => ({ ...e, createdAt: new Date(e.createdAt), updatedAt: new Date(e.updatedAt) })) 
       });
-      if (data.categories) await tx.category.createMany({ 
-        data: data.categories.map((c: any) => ({
-          ...c,
-          createdAt: new Date(c.createdAt)
-        })) 
-      });
-      if (data.timetables) await tx.timetable.createMany({ data: data.timetables });
-      if (data.patterns) await tx.shiftpattern.createMany({ 
-        data: data.patterns.map((p: any) => ({
-          ...p,
-          createdAt: new Date(p.createdAt),
-          startDate: p.startDate ? new Date(p.startDate) : null
-        })) 
-      });
+      if (data.categories) await tx.category.createMany({ data: data.categories.map((c: any) => ({ ...c, createdAt: new Date(c.createdAt) })) });
+      if (data.timetables) await tx.timetable.createMany({ data: data.timetables.map((t: any) => ({ ...t, createdAt: new Date(t.createdAt) })) });
+      if (data.patterns) await tx.shiftpattern.createMany({ data: data.patterns.map((p: any) => ({ ...p, createdAt: new Date(p.createdAt), startDate: p.startDate ? new Date(p.startDate) : null })) });
       if (data.patternItems) await tx.shiftpatternitem.createMany({ data: data.patternItems });
-      if (data.employeePatterns) await tx.employeepattern.createMany({ 
-        data: data.employeePatterns.map((ep: any) => ({
-          ...ep,
-          startDate: new Date(ep.startDate)
-        })) 
-      });
-      if (data.attendances) await tx.attendance.createMany({ 
-        data: data.attendances.map((a: any) => ({
-          ...a,
-          timestamp: new Date(a.timestamp)
-        })) 
-      });
-      if (data.devices) await tx.device.createMany({ 
-        data: data.devices.map((d: any) => ({
-          ...d,
-          lastSync: d.lastSync ? new Date(d.lastSync) : null
-        })) 
-      });
-      if (data.settings) await tx.systemsetting.createMany({ data: data.settings });
-      if (data.holidays) await tx.holiday.createMany({ 
-        data: data.holidays.map((h: any) => ({ 
-          ...h, 
-          date: new Date(h.date), 
-          createdAt: new Date(h.createdAt) 
-        })) 
-      });
+      if (data.employeePatterns) await tx.employeepattern.createMany({ data: data.employeePatterns.map((ep: any) => ({ ...ep, startDate: new Date(ep.startDate) })) });
+      if (data.employeeShifts) await tx.employeeshift.createMany({ data: data.employeeShifts });
+      if (data.attendances) await tx.attendance.createMany({ data: data.attendances.map((a: any) => ({ ...a, timestamp: new Date(a.timestamp) })) });
+      if (data.devices) await tx.device.createMany({ data: data.devices.map((d: any) => ({ ...d, lastSync: d.lastSync ? new Date(d.lastSync) : null })) });
+      if (data.settings) await tx.systemsetting.createMany({ data: data.settings.map((s: any) => ({ ...s, updatedAt: new Date(s.updatedAt) })) });
+      if (data.holidays) await tx.holiday.createMany({ data: data.holidays.map((h: any) => ({ ...h, date: new Date(h.date), createdAt: new Date(h.createdAt) })) });
+      if (data.honors) await tx.honor.createMany({ data: data.honors.map((ho: any) => ({ ...ho, createdAt: new Date(ho.createdAt) })) });
+    }, {
+      timeout: 30000 // 30 Detik
     });
     fs.unlinkSync(req.file.path);
     res.json({ success: true });
   } catch (error) { 
+    console.error('Restore Error:', error);
     if (req.file) fs.unlinkSync(req.file.path);
     res.status(500).json({ error: 'Gagal restore' }); 
   }
+});
 });
 
 // --- SERVE FRONTEND (Untuk Produksi/Docker) ---
