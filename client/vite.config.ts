@@ -14,7 +14,7 @@ export default defineConfig({
       manifest: {
         name: 'JARIKU MANSABA',
         short_name: 'MANSABA',
-        description: 'Sistem Presensi Kehadiran Madrasah Aliyah Negeri 1 Batang',
+        description: 'Sistem Presensi Kehadiran MA NU 01 Banyuputih',
         theme_color: '#2ecc71',
         icons: [
           {
