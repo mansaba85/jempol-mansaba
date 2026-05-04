@@ -1565,7 +1565,9 @@ app.post('/api/holidays', async (req, res) => {
 app.delete('/api/holidays/:id', async (req, res) => {
   await prisma.holiday.delete({ where: { id: Number(req.params.id) } });
   res.json({ success: true });
-}app.get('/api/settings/backup', async (req, res) => {
+});
+
+app.get('/api/settings/backup', async (req, res) => {
   try {
     const data = {
       employees: await prisma.employee.findMany(),
