@@ -161,15 +161,37 @@ app.get('/api/timetables', async (req, res) => {
 });
 
 app.post('/api/timetables', async (req, res) => {
-  const data = req.body;
-  const timetable = await prisma.timetable.create({ data });
-  res.json(timetable);
+  try {
+    const { categoryId, ...rest } = req.body;
+    const timetable = await prisma.timetable.create({ 
+      data: { 
+        ...rest, 
+        categoryId: categoryId ? parseInt(String(categoryId)) : null 
+      } 
+    });
+    res.json(timetable);
+  } catch (error) {
+    console.error("[Create Timetable Error]", error);
+    res.status(500).json({ error: 'Gagal membuat jadwal' });
+  }
 });
 
 app.put('/api/timetables/:id', async (req, res) => {
   const id = parseInt(req.params.id);
-  const timetable = await prisma.timetable.update({ where: { id }, data: req.body });
-  res.json(timetable);
+  try {
+    const { categoryId, ...rest } = req.body;
+    const timetable = await prisma.timetable.update({ 
+      where: { id }, 
+      data: { 
+        ...rest, 
+        categoryId: categoryId ? parseInt(String(categoryId)) : null 
+      } 
+    });
+    res.json(timetable);
+  } catch (error) {
+    console.error("[Update Timetable Error]", error);
+    res.status(500).json({ error: 'Gagal memperbarui jadwal' });
+  }
 });
 
 app.delete('/api/timetables/:id', async (req, res) => {
