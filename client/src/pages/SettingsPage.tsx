@@ -172,21 +172,23 @@ const SettingsPage = () => {
     if (!window.confirm('PERINGATAN: Memulihkan data akan menghapus semua data saat ini. Lanjutkan?')) return;
     
     setRestoring(true);
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const data = JSON.parse(e.target?.result as string);
-        await axios.post(`${API_URL}/settings/restore`, data);
-        toast.success('Data berhasil dipulihkan!');
-        window.location.reload();
-      } catch (err) {
-        console.error(err);
-        toast.error('Gagal memulihkan data');
-      } finally {
-        setRestoring(false);
-      }
-    };
-    reader.readAsText(file);
+    const formData = new FormData();
+    formData.append('backup', file);
+
+    try {
+      await axios.post(`${API_URL}/settings/restore`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      toast.success('Data berhasil dipulihkan!');
+      window.location.reload();
+    } catch (err) {
+      console.error(err);
+      toast.error('Gagal memulihkan data');
+    } finally {
+      setRestoring(false);
+    }
   };
 
   const handlePurgeLogs = async (beforeDate: string) => {
