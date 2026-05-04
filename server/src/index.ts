@@ -885,6 +885,10 @@ app.get('/api/reports/detailed', async (req, res) => {
     if (!emp) return res.status(404).json({ error: 'Pegawai tidak ditemukan' });
 
     const logs = await prisma.attendance.findMany({
+      where: { 
+        employeeId: empId,
+        timestamp: { gte: start, lte: end }
+      },
       orderBy: { timestamp: 'asc' }
     });
 
