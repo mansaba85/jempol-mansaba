@@ -15,7 +15,9 @@ import {
   History,
   LayoutGrid,
   Bell,
-  Fingerprint
+  Fingerprint,
+  Download,
+  X
 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, isSameDay } from 'date-fns';
 import { id } from 'date-fns/locale';
@@ -28,6 +30,8 @@ const EmployeeDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
 
   const isHistoryView = location.pathname === '/history';
 
@@ -41,7 +45,33 @@ const EmployeeDashboard = () => {
 
   useEffect(() => {
     fetchData();
+    
+    // PWA Install Logic
+    const handleBeforeInstallPrompt = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowInstallBanner(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    // Check if already in standalone mode
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      setShowInstallBanner(false);
+    }
+
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
   }, [currentMonth]);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setDeferredPrompt(null);
+      setShowInstallBanner(false);
+    }
+  };
 
   const fetchData = async () => {
     if (!user) return;
@@ -201,6 +231,38 @@ const EmployeeDashboard = () => {
 
   return (
     <div className="min-h-screen bg-[#f8fafc] font-outfit pb-24">
+      {/* PWA INSTALL BANNER */}
+      {showInstallBanner && (
+        <div className="bg-blue-600 p-4 relative overflow-hidden animate-in slide-in-from-top duration-500">
+           <div className="absolute top-0 right-0 w-32 h-full bg-white/10 -skew-x-12 translate-x-8"></div>
+           <div className="relative z-10 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                 <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center text-white">
+                    <Download size={20} />
+                 </div>
+                 <div>
+                    <h3 className="text-xs font-black text-white uppercase tracking-wider">Pasang Aplikasi</h3>
+                    <p className="text-[10px] text-blue-100 font-medium">Gunakan lebih cepat & nyaman di HP Anda.</p>
+                 </div>
+              </div>
+              <div className="flex items-center gap-2">
+                 <button 
+                   onClick={handleInstallClick}
+                   className="bg-white text-blue-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg active:scale-95 transition-transform"
+                 >
+                   Pasang
+                 </button>
+                 <button 
+                   onClick={() => setShowInstallBanner(false)}
+                   className="text-white/60 p-2"
+                 >
+                   <X size={16} />
+                 </button>
+              </div>
+           </div>
+        </div>
+      )}
+
       {/* ULTRA COMPACT EMERALD HEADER */}
       <div className="bg-[#2ecc71] pt-6 pb-20 px-6 relative overflow-hidden rounded-b-[3.5rem] shadow-lg">
         {/* Abstract Shapes */}

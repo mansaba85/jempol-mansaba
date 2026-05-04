@@ -2,7 +2,7 @@
 FROM node:22-alpine AS client-build
 WORKDIR /app/client
 COPY client/package*.json ./
-RUN npm install
+RUN npm install --legacy-peer-deps
 COPY client/ ./
 RUN npm run build
 
@@ -10,7 +10,7 @@ RUN npm run build
 FROM node:22-alpine AS server-build
 WORKDIR /app/server
 COPY server/package*.json ./
-RUN npm install
+RUN npm install --legacy-peer-deps
 COPY server/ ./
 # Generate Prisma with verbose output to catch errors
 RUN npx prisma generate
