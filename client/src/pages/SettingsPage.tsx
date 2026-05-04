@@ -31,6 +31,7 @@ const API_URL = '/api';
 const SettingsPage = () => {
   const { refreshSettings } = useSettings();
   const [loading, setLoading] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [employees, setEmployees] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [sertifikasiIds, setSertifikasiIds] = useState<number[]>([]);
@@ -167,20 +168,25 @@ const SettingsPage = () => {
     }
   };
 
-  const handleRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!window.confirm('PERINGATAN: Mengembalikan data akan menimpa data yang ada saat ini secara permanen. Lanjutkan?')) return;
-
-    const formData = new FormData();
-    formData.append('backup', file);
-    try {
-      await axios.post(`${API_URL}/settings/restore`, formData);
-      toast.success('Data berhasil dipulihkan! Halaman akan dimuat ulang.');
-      setTimeout(() => window.location.reload(), 2000);
-    } catch (err) {
-      toast.error('Gagal memulihkan data');
-    }
+  const handleRestore = async (file: File) => {
+    if (!window.confirm('PERINGATAN: Memulihkan data akan menghapus semua data saat ini. Lanjutkan?')) return;
+    
+    setRestoring(true);
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const data = JSON.parse(e.target?.result as string);
+        await axios.post(`${API_URL}/settings/restore`, data);
+        toast.success('Data berhasil dipulihkan!');
+        window.location.reload();
+      } catch (err) {
+        console.error(err);
+        toast.error('Gagal memulihkan data');
+      } finally {
+        setRestoring(false);
+      }
+    };
+    reader.readAsText(file);
   };
 
   const handlePurgeLogs = async (beforeDate: string) => {
@@ -211,7 +217,18 @@ const SettingsPage = () => {
 
   return (
     <div className="max-w-7xl mx-auto pb-20">
-      <Toaster />
+      <Toaster position="top-right" />
+       
+       {/* LOADING OVERLAY FOR RESTORE */}
+       {restoring && (
+         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex flex-col items-center justify-center text-white">
+            <div className="bg-white p-10 rounded-[2.5rem] flex flex-col items-center shadow-2xl">
+               <div className="w-16 h-16 border-4 border-emerald-100 border-t-emerald-500 rounded-full animate-spin mb-6"></div>
+               <h3 className="text-xl font-black text-slate-800 tracking-tight">Memulihkan Data...</h3>
+               <p className="text-sm text-slate-400 font-medium mt-2">Mohon jangan tutup halaman ini.</p>
+            </div>
+         </div>
+       )}
       
       {/* HUD HEADER */}
        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-12 px-4">
@@ -243,7 +260,7 @@ const SettingsPage = () => {
            <label className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 md:px-6 py-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl border border-blue-200 transition-all font-bold text-[9px] md:text-[10px] tracking-widest shadow-sm cursor-pointer">
              <Upload size={16} />
              <span>PULIHKAN</span>
-             <input type="file" className="hidden" onChange={handleRestore} />
+             <input type="file" className="hidden" onChange={(e) => e.target.files?.[0] && handleRestore(e.target.files[0])} />
            </label>
 
            <button 
