@@ -1657,9 +1657,9 @@ app.use(express.static(clientDistPath));
 // Middleware cadangan untuk menangani Refresh di SPA (Single Page Application)
 // Tanpa menggunakan simbol bintang (*) agar kompatibel dengan Express 5
 app.use((req, res) => {
-  // Jika request dimulai dengan /api, jangan kirim index.html (biar error 404 asli)
-  if (req.path.startsWith('/api')) {
-    return res.status(404).json({ error: 'API route not found' });
+  // Jika request dimulai dengan /api atau meminta file statis yang harusnya ada (js, manifest), jangan kirim index.html
+  if (req.path.startsWith('/api') || req.path.endsWith('.js') || req.path.endsWith('.webmanifest') || req.path.endsWith('.png')) {
+    return res.status(404).json({ error: 'File or route not found' });
   }
   res.sendFile(path.join(clientDistPath, 'index.html'));
 });
