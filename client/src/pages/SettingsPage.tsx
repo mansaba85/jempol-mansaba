@@ -22,7 +22,8 @@ import {
   Calendar,
   Plus,
   Trash2,
-  Info
+  Info,
+  AlertCircle
 } from 'lucide-react';
 
 const API_URL = '/api';
@@ -406,7 +407,7 @@ const SettingsPage = () => {
                   </div>
                   
                   <div className="mt-8 flex items-start gap-4 p-5 bg-rose-50 rounded-2xl border border-rose-100">
-                     <circle-alert size={16} className="text-rose-500 shrink-0 mt-0.5" />
+                     <AlertCircle size={16} className="text-rose-500 shrink-0 mt-0.5" />
                      <p className="text-[9px] font-medium text-rose-600 italic leading-relaxed">
                         Tombol di atas akan menghapus data presensi secara permanen. Pastikan Anda telah melakukan <span className="font-black underline">BACKUP DATA</span> terlebih dahulu sebelum melakukan pembersihan database.
                      </p>
