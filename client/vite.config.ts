@@ -12,10 +12,10 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
       manifest: {
-        name: 'Jempol Mansaba - Presensi Madrasah',
-        short_name: 'JempolMansaba',
+        name: 'JARIKU MANSABA',
+        short_name: 'MANSABA',
         description: 'Sistem Presensi Kehadiran Madrasah Aliyah Negeri 1 Batang',
-        theme_color: '#2563eb',
+        theme_color: '#2ecc71',
         icons: [
           {
             src: 'pwa-192x192.png',
