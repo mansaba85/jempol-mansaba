@@ -1602,16 +1602,54 @@ app.post('/api/settings/restore', upload.single('backup'), async (req: any, res:
       await tx.device.deleteMany();
       await tx.systemsetting.deleteMany();
 
-      if (data.employees) await tx.employee.createMany({ data: data.employees });
-      if (data.categories) await tx.category.createMany({ data: data.categories });
+      if (data.employees) await tx.employee.createMany({ 
+        data: data.employees.map((e: any) => ({
+          ...e,
+          createdAt: new Date(e.createdAt),
+          updatedAt: new Date(e.updatedAt)
+        })) 
+      });
+      if (data.categories) await tx.category.createMany({ 
+        data: data.categories.map((c: any) => ({
+          ...c,
+          createdAt: new Date(c.createdAt)
+        })) 
+      });
       if (data.timetables) await tx.timetable.createMany({ data: data.timetables });
-      if (data.patterns) await tx.shiftpattern.createMany({ data: data.patterns });
+      if (data.patterns) await tx.shiftpattern.createMany({ 
+        data: data.patterns.map((p: any) => ({
+          ...p,
+          createdAt: new Date(p.createdAt),
+          startDate: p.startDate ? new Date(p.startDate) : null
+        })) 
+      });
       if (data.patternItems) await tx.shiftpatternitem.createMany({ data: data.patternItems });
-      if (data.employeePatterns) await tx.employeepattern.createMany({ data: data.employeePatterns });
-      if (data.attendances) await tx.attendance.createMany({ data: data.attendances });
-      if (data.devices) await tx.device.createMany({ data: data.devices });
+      if (data.employeePatterns) await tx.employeepattern.createMany({ 
+        data: data.employeePatterns.map((ep: any) => ({
+          ...ep,
+          startDate: new Date(ep.startDate)
+        })) 
+      });
+      if (data.attendances) await tx.attendance.createMany({ 
+        data: data.attendances.map((a: any) => ({
+          ...a,
+          timestamp: new Date(a.timestamp)
+        })) 
+      });
+      if (data.devices) await tx.device.createMany({ 
+        data: data.devices.map((d: any) => ({
+          ...d,
+          lastSync: d.lastSync ? new Date(d.lastSync) : null
+        })) 
+      });
       if (data.settings) await tx.systemsetting.createMany({ data: data.settings });
-      if (data.holidays) await tx.holiday.createMany({ data: data.holidays.map((h: any) => ({ ...h, date: new Date(h.date), createdAt: new Date(h.createdAt) })) });
+      if (data.holidays) await tx.holiday.createMany({ 
+        data: data.holidays.map((h: any) => ({ 
+          ...h, 
+          date: new Date(h.date), 
+          createdAt: new Date(h.createdAt) 
+        })) 
+      });
     });
     fs.unlinkSync(req.file.path);
     res.json({ success: true });
