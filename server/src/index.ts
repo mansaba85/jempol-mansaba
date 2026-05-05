@@ -1286,7 +1286,12 @@ app.get('/api/honor/recap', async (req, res) => {
   const employees = await prisma.employee.findMany({ include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } } } } });
   
   const allLogs = await prisma.attendance.findMany({ 
-    where: { timestamp: { gte: start, lte: new Date(end.getTime() + 86400000) } } 
+    where: { 
+      timestamp: { 
+        gte: new Date(start.getTime() - 12 * 60 * 60 * 1000), 
+        lte: new Date(end.getTime() + 12 * 60 * 60 * 1000) 
+      } 
+    } 
   });
 
   const hList = await prisma.holiday.findMany({
@@ -1295,51 +1300,13 @@ app.get('/api/honor/recap', async (req, res) => {
 
   // Pre-process logs into a Map for O(1) lookup
   const logsMap = new Map<string, any[]>();
-  const dateFormatter = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', day: '2-digit', month: '2-digit', year: 'numeric' });
-  const timeFormatter = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
-  const dayNameFormatter = new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', weekday: 'long' });
-
-  const getJktTime = (date: Date) => {
-    // Ambil info tanggal Jakarta asli
-    const s = date.toLocaleString('en-GB', { timeZone: 'Asia/Jakarta' });
-    const match = s.match(/(\d+)\/(\d+)\/(\d+), (\d+):(\d+)/);
-    if (!match) return "00:00";
-    
-    const [, dd, mm, yyyy, hh, mi] = match;
-    const isOld = parseInt(yyyy) < 2026 || (parseInt(yyyy) === 2026 && parseInt(mm) < 5);
-
-    if (isOld) {
-      // Data April ke belakang: Ambil jam mentah (UTC)
-      const h = date.getUTCHours().toString().padStart(2, '0');
-      const m = date.getUTCMinutes().toString().padStart(2, '0');
-      return `${h}:${m}`;
-    } else {
-      // Data Mei ke depan: Ambil jam Jakarta asli (Hasil match)
-      return `${hh}:${mi}`;
-    }
-  };
   
   const getJktDateStr = (date: Date) => {
-    const s = date.toLocaleString('en-GB', { timeZone: 'Asia/Jakarta' });
-    const match = s.match(/(\d+)\/(\d+)\/(\d+)/);
-    if (!match) return "01/01/2026";
-    
-    const [, dd, mm, yyyy] = match;
-    const isOld = parseInt(yyyy) < 2026 || (parseInt(yyyy) === 2026 && parseInt(mm) < 5);
-
-    if (isOld) {
-      // Data April: Pakai UTC date agar tidak bergeser ke Mei
-      const y = date.getUTCFullYear();
-      const m = (date.getUTCMonth() + 1).toString().padStart(2, '0');
-      const d = date.getUTCDate().toString().padStart(2, '0');
-      return `${d}/${m}/${y}`;
-    } else {
-      // Data Mei: Pakai tanggal Jakarta asli
-      const y = date.getUTCFullYear();
-      const m = (date.getUTCMonth() + 1).toString().padStart(2, '0');
-      const d = date.getUTCDate().toString().padStart(2, '0');
-      return `${y}-${m}-${d}`;
-    }
+    const d = new Date(date.getTime() + 7 * 60 * 60 * 1000);
+    const y = d.getUTCFullYear();
+    const m = (d.getUTCMonth() + 1).toString().padStart(2, '0');
+    const day = d.getUTCDate().toString().padStart(2, '0');
+    return `${y}-${m}-${day}`;
   };
 
   allLogs.forEach(l => {
@@ -1348,6 +1315,13 @@ app.get('/api/honor/recap', async (req, res) => {
     if (!logsMap.has(key)) logsMap.set(key, []);
     logsMap.get(key)?.push(l);
   });
+
+  const getJktTime = (date: Date) => {
+    const d = new Date(date.getTime() + 7 * 60 * 60 * 1000);
+    const h = d.getUTCHours().toString().padStart(2, '0');
+    const m = d.getUTCMinutes().toString().padStart(2, '0');
+    return `${h}:${m}`;
+  };
 
   const results: any[] = [];
   for (const emp of employees) {
