@@ -1335,6 +1335,20 @@ app.get('/api/honor/recap', async (req, res) => {
       return `${d}/${m}/${y}`;
     } else {
       // Data Mei: Pakai tanggal Jakarta asli
+      const y = date.getUTCFullYear();
+      const m = (date.getUTCMonth() + 1).toString().padStart(2, '0');
+      const d = date.getUTCDate().toString().padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+  };
+
+  allLogs.forEach(l => {
+    const dateStr = getJktDateStr(l.timestamp);
+    const key = `${l.employeeId}_${dateStr}`;
+    if (!logsMap.has(key)) logsMap.set(key, []);
+    logsMap.get(key)?.push(l);
+  });
+
   const results: any[] = [];
   for (const emp of employees) {
     let dD = 0, nD = 0, tH = 0, tW = 0;
