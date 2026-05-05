@@ -1187,7 +1187,13 @@ app.get('/api/reports/monthly', async (req, res) => {
               const mJkt = new Date(l.timestamp.getTime() + 7 * 60 * 60 * 1000).getUTCMinutes().toString().padStart(2, '0');
               const timeJkt = `${hJkt}:${mJkt}`;
 
-              return (timeRaw >= startRange && timeRaw <= endRange) || (timeJkt >= startRange && timeJkt <= endRange);
+              const d = new Date(l.timestamp.getTime() + 7 * 60 * 60 * 1000);
+              const yyyyL = d.getUTCFullYear();
+              const mmL = (d.getUTCMonth() + 1).toString().padStart(2, '0');
+              const ddL = d.getUTCDate().toString().padStart(2, '0');
+              const dateJkt = `${yyyyL}-${mmL}-${ddL}`;
+
+              return dateJkt === dateStr && ((timeRaw >= startRange && timeRaw <= endRange) || (timeJkt >= startRange && timeJkt <= endRange));
             });
 
             if (matches.length === 0) return null;
@@ -1405,7 +1411,13 @@ app.get('/api/honor/recap', async (req, res) => {
             const mJkt = new Date(l.timestamp.getTime() + 7 * 60 * 60 * 1000).getUTCMinutes().toString().padStart(2, '0');
             const timeJkt = `${hJkt}:${mJkt}`;
 
-            return (timeRaw >= startRange && timeRaw <= endRange) || (timeJkt >= startRange && timeJkt <= endRange);
+          const d = new Date(l.timestamp.getTime() + 7 * 60 * 60 * 1000);
+          const yyyyL = d.getUTCFullYear();
+          const mmL = (d.getUTCMonth() + 1).toString().padStart(2, '0');
+          const ddL = d.getUTCDate().toString().padStart(2, '0');
+          const dateJkt = `${yyyyL}-${mmL}-${ddL}`;
+
+          return dateJkt === (isEarliest ? dateStr : getJktDateStr(l.timestamp)) && ((timeRaw >= startRange && timeRaw <= endRange) || (timeJkt >= startRange && timeJkt <= endRange));
           });
 
           if (matches.length === 0) return null;
@@ -1513,12 +1525,16 @@ app.get('/api/reports/absent', async (req, res) => {
       } 
     });
 
-    // 2. Ambil log hari ini saja
+    const [yyyy, mm] = [targetDate.getFullYear(), (targetDate.getMonth() + 1).toString().padStart(2, '0')];
+    const startDate = new Date(`${yyyy}-${mm}-01T00:00:00Z`);
+    const endDate = new Date(new Date(`${yyyy}-${mm}-01T00:00:00Z`).setMonth(new Date(`${yyyy}-${mm}-01T00:00:00Z`).getMonth() + 1));
+          
+    // Ambil dari H-1 sore sampai H+1 pagi untuk antisipasi timezone
     const logs = await prisma.attendance.findMany({
       where: {
         timestamp: {
-          gte: new Date(targetDate.getTime()),
-          lte: new Date(targetDate.getTime() + 86400000)
+          gte: new Date(startDate.getTime() - 12 * 60 * 60 * 1000),
+          lte: new Date(endDate.getTime() + 12 * 60 * 60 * 1000)
         }
       }
     });
