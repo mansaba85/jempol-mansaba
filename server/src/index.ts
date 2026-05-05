@@ -1177,34 +1177,67 @@ app.get('/api/reports/monthly', async (req, res) => {
             return isOld ? `${yyyy}-${(date.getUTCMonth()+1).toString().padStart(2,'0')}-${date.getUTCDate().toString().padStart(2,'0')}` : `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`;
           };
 
-          const iLog = logs.find(l => getJktDateStr(l.timestamp) === dateStr && (l.isManual || (() => {
-            const h = getJktTime(l.timestamp);
-            return h >= (tt.mulaiScanIn || '00:00') && h <= (tt.akhirScanIn || '23:59');
-          })()));
+          const findBestLog = (logList: any[], startRange: string, endRange: string, isEarliest: boolean) => {
+            const matches = logList.filter(l => {
+              const hRaw = l.timestamp.getUTCHours().toString().padStart(2, '0');
+              const mRaw = l.timestamp.getUTCMinutes().toString().padStart(2, '0');
+              const timeRaw = `${hRaw}:${mRaw}`;
+              
+              const hJkt = new Date(l.timestamp.getTime() + 7 * 60 * 60 * 1000).getUTCHours().toString().padStart(2, '0');
+              const mJkt = new Date(l.timestamp.getTime() + 7 * 60 * 60 * 1000).getUTCMinutes().toString().padStart(2, '0');
+              const timeJkt = `${hJkt}:${mJkt}`;
+
+              return (timeRaw >= startRange && timeRaw <= endRange) || (timeJkt >= startRange && timeJkt <= endRange);
+            });
+
+            if (matches.length === 0) return null;
+            
+            return matches.sort((a, b) => isEarliest ? a.timestamp.getTime() - b.timestamp.getTime() : b.timestamp.getTime() - a.timestamp.getTime())[0];
+          };
+
+          const iLog = findBestLog(logs.filter(l => getJktDateStr(l.timestamp) === dateStr), tt.mulaiScanIn || '00:00', tt.akhirScanIn || '23:59', true);
 
           const nextDayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date(cd.getTime() + 86400000));
-          const targetOut = isO ? logs.filter(l => getJktDateStr(l.timestamp) === nextDayStr) : logs.filter(l => getJktDateStr(l.timestamp) === dateStr);
+          const targetOutLogs = isO ? logs.filter(l => getJktDateStr(l.timestamp) === nextDayStr) : logs.filter(l => getJktDateStr(l.timestamp) === dateStr);
           
-          const oLog = [...targetOut].reverse().find(l => l.isManual || (() => {
-            const h = getJktTime(l.timestamp);
-            return h >= (tt.mulaiScanOut || '00:00') && h <= (tt.akhirScanOut || '23:59');
-          })());
+          const oLog = findBestLog(targetOutLogs, tt.mulaiScanOut || '00:00', tt.akhirScanOut || '23:59', false);
 
           if (iLog || oLog) {
             totalDays++;
             if (iLog) {
-              const [hIdx1, mIdx1] = getJktTime(iLog.timestamp).split(':').map(Number);
-              const [h1, m1] = tt.jamMasuk.split(/[:.]/).map(Number);
-              const d1 = (hIdx1 * 60 + mIdx1) - (h1 * 60 + m1);
+              const hRaw = iLog.timestamp.getUTCHours();
+              const mRaw = iLog.timestamp.getUTCMinutes();
+              const hJkt = new Date(iLog.timestamp.getTime() + 7 * 60 * 60 * 1000).getUTCHours();
+              const mJkt = new Date(iLog.timestamp.getTime() + 7 * 60 * 60 * 1000).getUTCMinutes();
+              
+              const [hTarget, mTarget] = tt.jamMasuk.split(/[:.]/).map(Number);
+              
+              // Pilih mana yang lebih dekat ke jam masuk (Raw vs Jkt)
+              const diffRaw = Math.abs((hRaw * 60 + mRaw) - (hTarget * 60 + mTarget));
+              const diffJkt = Math.abs((hJkt * 60 + mJkt) - (hTarget * 60 + mTarget));
+              
+              const bestDiff = Math.min(diffRaw, diffJkt);
+              const bestMinutes = diffRaw < diffJkt ? (hRaw * 60 + mRaw) : (hJkt * 60 + mJkt);
+              
+              const d1 = bestMinutes - (hTarget * 60 + mTarget);
               if (d1 > 0) totalLate += d1;
             } else if (oLog && pL > 0) totalLate += pL;
 
             if (oLog) {
-              const [hIdx2, mIdx2] = getJktTime(oLog.timestamp).split(':').map(Number);
-              const [h2, m2] = tt.jamPulang.split(/[:.]/).map(Number); 
-              const h2a = isO ? h2 + 24 : h2;
-              let ah = hIdx2; if (isO) ah += 24;
-              const d2 = (h2a * 60 + m2) - (ah * 60 + mIdx2);
+              const hRaw = oLog.timestamp.getUTCHours();
+              const mRaw = oLog.timestamp.getUTCMinutes();
+              const hJkt = new Date(oLog.timestamp.getTime() + 7 * 60 * 60 * 1000).getUTCHours();
+              const mJkt = new Date(oLog.timestamp.getTime() + 7 * 60 * 60 * 1000).getUTCMinutes();
+              
+              const [hTarget, mTarget] = tt.jamPulang.split(/[:.]/).map(Number);
+              const hTargetA = isO ? hTarget + 24 : hTarget;
+
+              const diffRaw = Math.abs(((isO && hRaw < 12 ? hRaw + 24 : hRaw) * 60 + mRaw) - (hTargetA * 60 + mTarget));
+              const diffJkt = Math.abs(((isO && hJkt < 12 ? hJkt + 24 : hJkt) * 60 + mJkt) - (hTargetA * 60 + mTarget));
+              
+              const bestMinutes = diffRaw < diffJkt ? (isO && hRaw < 12 ? hRaw + 24 : hRaw) * 60 + mRaw : (isO && hJkt < 12 ? hJkt + 24 : hJkt) * 60 + mJkt;
+              
+              const d2 = (hTargetA * 60 + mTarget) - bestMinutes;
               if (d2 > 0) totalEarly += d2;
             } else if (iLog && pE > 0) totalEarly += pE;
 
@@ -1362,22 +1395,33 @@ app.get('/api/honor/recap', async (req, res) => {
         const dayLogs = logsMap.get(`${emp.id}_${dateStr}`) || [];
         const isO = tt.jamPulang < tt.jamMasuk;
         
-        const iL = dayLogs.find(l => l.isManual || (() => {
-          const t = getJktTime(l.timestamp);
-          return t >= (tt.mulaiScanIn || '00:00') && t <= (tt.akhirScanIn || '23:59');
-        })());
+        const findBestLog = (logList: any[], startRange: string, endRange: string, isEarliest: boolean) => {
+          const matches = logList.filter(l => {
+            const hRaw = l.timestamp.getUTCHours().toString().padStart(2, '0');
+            const mRaw = l.timestamp.getUTCMinutes().toString().padStart(2, '0');
+            const timeRaw = `${hRaw}:${mRaw}`;
+            
+            const hJkt = new Date(l.timestamp.getTime() + 7 * 60 * 60 * 1000).getUTCHours().toString().padStart(2, '0');
+            const mJkt = new Date(l.timestamp.getTime() + 7 * 60 * 60 * 1000).getUTCMinutes().toString().padStart(2, '0');
+            const timeJkt = `${hJkt}:${mJkt}`;
 
-        let targetOut = dayLogs;
+            return (timeRaw >= startRange && timeRaw <= endRange) || (timeJkt >= startRange && timeJkt <= endRange);
+          });
+
+          if (matches.length === 0) return null;
+          return matches.sort((a, b) => isEarliest ? a.timestamp.getTime() - b.timestamp.getTime() : b.timestamp.getTime() - a.timestamp.getTime())[0];
+        };
+
+        const iL = findBestLog(dayLogs, tt.mulaiScanIn || '00:00', tt.akhirScanIn || '23:59', true);
+
+        let targetOutLogs = dayLogs;
         if (isO) {
           const tomorrow = new Date(cd); tomorrow.setDate(tomorrow.getDate() + 1);
-          const nextDStr = dateFormatter.format(tomorrow);
-          targetOut = logsMap.get(`${emp.id}_${nextDStr}`) || [];
+          const nextDStr = getJktDateStr(tomorrow);
+          targetOutLogs = logsMap.get(`${emp.id}_${nextDStr}`) || [];
         }
 
-        const oL = [...targetOut].reverse().find(l => l.isManual || (() => {
-          const t = getJktTime(l.timestamp);
-          return t >= (tt.mulaiScanOut || '00:00') && t <= (tt.akhirScanOut || '23:59');
-        })());
+        const oL = findBestLog(targetOutLogs, tt.mulaiScanOut || '00:00', tt.akhirScanOut || '23:59', false);
 
         if (iL || oL) {
           tH++; let late = false, early = false;
