@@ -1374,7 +1374,7 @@ app.get('/api/honor/recap', async (req, res) => {
         const dayLogs = logsMap.get(`${emp.id}_${targetDateStr}`) || [];
         const isO = tt.jamPulang < tt.jamMasuk;
         
-        const findBestLog = (logList: any[], startRange: string, endRange: string, isEarliest: boolean) => {
+        const findBestLog = (logList: any[], startRange: string, endRange: string, isEarliest: boolean, targetD: string) => {
           const matches = logList.filter(l => {
             const hRaw = l.timestamp.getUTCHours().toString().padStart(2, '0');
             const mRaw = l.timestamp.getUTCMinutes().toString().padStart(2, '0');
@@ -1390,24 +1390,24 @@ app.get('/api/honor/recap', async (req, res) => {
           const ddL = d.getUTCDate().toString().padStart(2, '0');
           const dateJkt = `${yyyyL}-${mmL}-${ddL}`;
 
-          // Kita bandingkan dengan targetDateStr yang sudah YYYY-MM-DD
-          return dateJkt === targetDateStr && ((timeRaw >= startRange && timeRaw <= endRange) || (timeJkt >= startRange && timeJkt <= endRange));
+          return dateJkt === targetD && ((timeRaw >= startRange && timeRaw <= endRange) || (timeJkt >= startRange && timeJkt <= endRange));
           });
 
           if (matches.length === 0) return null;
           return matches.sort((a, b) => isEarliest ? a.timestamp.getTime() - b.timestamp.getTime() : b.timestamp.getTime() - a.timestamp.getTime())[0];
         };
 
-        const iL = findBestLog(dayLogs, tt.mulaiScanIn || '00:00', tt.akhirScanIn || '23:59', true);
+        const iL = findBestLog(dayLogs, tt.mulaiScanIn || '00:00', tt.akhirScanIn || '23:59', true, targetDateStr);
 
         let targetOutLogs = dayLogs;
+        let outTargetDStr = targetDateStr;
         if (isO) {
           const tomorrow = new Date(cd); tomorrow.setDate(tomorrow.getDate() + 1);
-          const nextDStr = `${tomorrow.getFullYear()}-${(tomorrow.getMonth()+1).toString().padStart(2,'0')}-${tomorrow.getDate().toString().padStart(2,'0')}`;
-          targetOutLogs = logsMap.get(`${emp.id}_${nextDStr}`) || [];
+          outTargetDStr = `${tomorrow.getFullYear()}-${(tomorrow.getMonth()+1).toString().padStart(2,'0')}-${tomorrow.getDate().toString().padStart(2,'0')}`;
+          targetOutLogs = logsMap.get(`${emp.id}_${outTargetDStr}`) || [];
         }
 
-        const oL = findBestLog(targetOutLogs, tt.mulaiScanOut || '00:00', tt.akhirScanOut || '23:59', false);
+        const oL = findBestLog(targetOutLogs, tt.mulaiScanOut || '00:00', tt.akhirScanOut || '23:59', false, outTargetDStr);
 
         if (iL || oL) {
           tH++; let late = false, early = false;
