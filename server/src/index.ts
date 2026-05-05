@@ -1159,33 +1159,57 @@ app.get('/api/reports/monthly', async (req, res) => {
         if (tt) {
           totalWorkDays++;
           const isO = tt.jamPulang < tt.jamMasuk;
-          const iLog = logs.find(l => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(l.timestamp) === dateStr && (l.isManual || (() => {
-            const h = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(l.timestamp);
+          const getJktTime = (date: Date) => {
+            const s = date.toLocaleString('en-GB', { timeZone: 'Asia/Jakarta' });
+            const match = s.match(/(\d+)\/(\d+)\/(\d+), (\d+):(\d+)/);
+            if (!match) return "00:00";
+            const [, dd, mm, yyyy, hh, mi] = match;
+            const isOld = parseInt(yyyy) < 2026 || (parseInt(yyyy) === 2026 && parseInt(mm) < 5);
+            return isOld ? `${date.getUTCHours().toString().padStart(2, '0')}:${date.getUTCMinutes().toString().padStart(2, '0')}` : `${hh}:${mi}`;
+          };
+
+          const getJktDateStr = (date: Date) => {
+            const s = date.toLocaleString('en-GB', { timeZone: 'Asia/Jakarta' });
+            const match = s.match(/(\d+)\/(\d+)\/(\d+)/);
+            if (!match) return "2026-01-01";
+            const [, dd, mm, yyyy] = match;
+            const isOld = parseInt(yyyy) < 2026 || (parseInt(yyyy) === 2026 && parseInt(mm) < 5);
+            return isOld ? `${yyyy}-${(date.getUTCMonth()+1).toString().padStart(2,'0')}-${date.getUTCDate().toString().padStart(2,'0')}` : `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`;
+          };
+
+          const iLog = logs.find(l => getJktDateStr(l.timestamp) === dateStr && (l.isManual || (() => {
+            const h = getJktTime(l.timestamp);
             return h >= (tt.mulaiScanIn || '00:00') && h <= (tt.akhirScanIn || '23:59');
           })()));
-          const targetOut = isO ? logs.filter(l => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(l.timestamp) === new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date(cd.getTime() + 86400000))) : logs.filter(l => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(l.timestamp) === dateStr);
+
+          const nextDayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date(cd.getTime() + 86400000));
+          const targetOut = isO ? logs.filter(l => getJktDateStr(l.timestamp) === nextDayStr) : logs.filter(l => getJktDateStr(l.timestamp) === dateStr);
+          
           const oLog = [...targetOut].reverse().find(l => l.isManual || (() => {
-            const h = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(l.timestamp);
+            const h = getJktTime(l.timestamp);
             return h >= (tt.mulaiScanOut || '00:00') && h <= (tt.akhirScanOut || '23:59');
           })());
+
           if (iLog || oLog) {
             totalDays++;
             if (iLog) {
-              const [hIdx1, mIdx1] = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(iLog.timestamp).split(':').map(Number);
+              const [hIdx1, mIdx1] = getJktTime(iLog.timestamp).split(':').map(Number);
               const [h1, m1] = tt.jamMasuk.split(/[:.]/).map(Number);
               const d1 = (hIdx1 * 60 + mIdx1) - (h1 * 60 + m1);
               if (d1 > 0) totalLate += d1;
             } else if (oLog && pL > 0) totalLate += pL;
 
             if (oLog) {
-              const [hIdx2, mIdx2] = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(oLog.timestamp).split(':').map(Number);
-              const [h2, m2] = tt.jamPulang.split(/[:.]/).map(Number); const h2a = isO ? h2 + 24 : h2;
+              const [hIdx2, mIdx2] = getJktTime(oLog.timestamp).split(':').map(Number);
+              const [h2, m2] = tt.jamPulang.split(/[:.]/).map(Number); 
+              const h2a = isO ? h2 + 24 : h2;
               let ah = hIdx2; if (isO) ah += 24;
               const d2 = (h2a * 60 + m2) - (ah * 60 + mIdx2);
               if (d2 > 0) totalEarly += d2;
             } else if (iLog && pE > 0) totalEarly += pE;
 
             if (iLog && oLog) {
+              // Durasi juga harus konsisten
               const dur = Math.round((new Date(oLog.timestamp).getTime() - new Date(iLog.timestamp).getTime()) / 60000);
               if (dur > 0) totalWorkDuration += dur;
             }
