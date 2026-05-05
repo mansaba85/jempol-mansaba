@@ -1429,7 +1429,7 @@ app.get('/api/honor/recap', async (req, res) => {
             const [h, m] = tt.jamMasuk.split(/[:.]/).map(Number);
             if ((hIdx1 * 60 + mIdx1) - (h * 60 + m) > 5) {
               late = true;
-              console.log(`[DEBUG] LATE: ${emp.name} | Date: ${dateStr} | Scan: ${hStr} | Target: ${tt.jamMasuk}`);
+              console.log(`[DEBUG] LATE: ${emp.name} | Date: ${targetDateStr} | Scan: ${hStr} | Target: ${tt.jamMasuk}`);
             }
           } else if (!iL && oL) {
              late = true;
@@ -1443,7 +1443,7 @@ app.get('/api/honor/recap', async (req, res) => {
             let ah = hIdx2; if (isO) ah += 24;
             if ((ha * 60 + m) - (ah * 60 + mIdx2) > 5) {
               early = true;
-              console.log(`[DEBUG] EARLY: ${emp.name} | Date: ${dateStr} | Scan: ${hStr} | Target: ${tt.jamPulang}`);
+              console.log(`[DEBUG] EARLY: ${emp.name} | Date: ${targetDateStr} | Scan: ${hStr} | Target: ${tt.jamPulang}`);
             }
           } else if (!oL && iL) {
              // Jika baru scan masuk tapi belum scan pulang:
