@@ -1193,6 +1193,7 @@ app.get('/api/reports/monthly', async (req, res) => {
               const ddL = d.getUTCDate().toString().padStart(2, '0');
               const dateJkt = `${yyyyL}-${mmL}-${ddL}`;
 
+              // dateStr sudah dalam format YYYY-MM-DD dari getJktDateStr
               return dateJkt === dateStr && ((timeRaw >= startRange && timeRaw <= endRange) || (timeJkt >= startRange && timeJkt <= endRange));
             });
 
@@ -1334,53 +1335,38 @@ app.get('/api/honor/recap', async (req, res) => {
       return `${d}/${m}/${y}`;
     } else {
       // Data Mei: Pakai tanggal Jakarta asli
-      return `${dd.padStart(2, '0')}/${mm.padStart(2, '0')}/${yyyy}`;
-    }
-  };
-
-  allLogs.forEach(l => {
-    const dateStr = getJktDateStr(l.timestamp);
-    const key = `${l.employeeId}_${dateStr}`;
-    if (!logsMap.has(key)) logsMap.set(key, []);
-    logsMap.get(key)?.push(l);
-  });
-
   const results: any[] = [];
   for (const emp of employees) {
     let dD = 0, nD = 0, tH = 0, tW = 0;
     
     let cdLoop = new Date(start);
     while (cdLoop <= end) {
-      const dateStr = getJktDateStr(cdLoop);
+      const targetDateStr = `${cdLoop.getFullYear()}-${(cdLoop.getMonth()+1).toString().padStart(2,'0')}-${cdLoop.getDate().toString().padStart(2,'0')}`;
       const cd = new Date(cdLoop);
       
       let tt: any = null; 
       const ep = emp.employeepattern && emp.employeepattern[0];
       if (ep && ep.shiftpattern) {
-        // Ambil StartDate Pattern (Hanya Tanggalnya saja)
         const dS = new Date(ep.shiftpattern.startDate);
         dS.setHours(0,0,0,0);
-        
-        // Ambil Tanggal Berjalan (Hanya Tanggalnya saja)
         const dC = new Date(cd);
         dC.setHours(0,0,0,0);
-        
-        // Hitung selisih hari secara akurat
         const diffTime = dC.getTime() - dS.getTime();
         const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
         
         if (diffDays >= 0) {
           const dayCycle = (diffDays % ep.shiftpattern.cycleDays) + 1;
           const ci = ep.shiftpattern.shiftpatternitem.find(i => i.dayNumber === dayCycle);
-          
-          if (ci && ci.timetable) {
-            tt = ci.timetable;
-          }
+          if (ci && ci.timetable) tt = ci.timetable;
         }
       }
 
       // CHECK HOLIDAY
-      const dayHoliday = hList.find(h => dateFormatter.format(h.date) === dateStr);
+      const dayHoliday = hList.find(h => {
+        const hd = new Date(h.date.getTime() + 7 * 60 * 60 * 1000);
+        const hStr = `${hd.getUTCFullYear()}-${(hd.getUTCMonth()+1).toString().padStart(2,'0')}-${hd.getUTCDate().toString().padStart(2,'0')}`;
+        return hStr === targetDateStr;
+      });
       if (dayHoliday) {
         let isAffected = false;
         if (dayHoliday.isGlobal) isAffected = true;
@@ -1388,7 +1374,6 @@ app.get('/api/honor/recap', async (req, res) => {
           const roles = (dayHoliday.affectedRoles || '').split(',').map(s => s.trim().toUpperCase());
           const patterns = (dayHoliday.affectedPatterns || '').split(',').map(s => s.trim());
           const currentPatternId = String(emp.employeepattern[0]?.patternId || '');
-
           if (roles.includes(String(emp.role || '').toUpperCase()) || patterns.includes(currentPatternId)) {
             isAffected = true;
           }
@@ -1398,7 +1383,7 @@ app.get('/api/honor/recap', async (req, res) => {
 
       if (tt) {
         tW++;
-        const dayLogs = logsMap.get(`${emp.id}_${dateStr}`) || [];
+        const dayLogs = logsMap.get(`${emp.id}_${targetDateStr}`) || [];
         const isO = tt.jamPulang < tt.jamMasuk;
         
         const findBestLog = (logList: any[], startRange: string, endRange: string, isEarliest: boolean) => {
@@ -1417,7 +1402,8 @@ app.get('/api/honor/recap', async (req, res) => {
           const ddL = d.getUTCDate().toString().padStart(2, '0');
           const dateJkt = `${yyyyL}-${mmL}-${ddL}`;
 
-          return dateJkt === (isEarliest ? dateStr : getJktDateStr(l.timestamp)) && ((timeRaw >= startRange && timeRaw <= endRange) || (timeJkt >= startRange && timeJkt <= endRange));
+          // Kita bandingkan dengan targetDateStr yang sudah YYYY-MM-DD
+          return dateJkt === targetDateStr && ((timeRaw >= startRange && timeRaw <= endRange) || (timeJkt >= startRange && timeJkt <= endRange));
           });
 
           if (matches.length === 0) return null;
@@ -1429,7 +1415,7 @@ app.get('/api/honor/recap', async (req, res) => {
         let targetOutLogs = dayLogs;
         if (isO) {
           const tomorrow = new Date(cd); tomorrow.setDate(tomorrow.getDate() + 1);
-          const nextDStr = getJktDateStr(tomorrow);
+          const nextDStr = `${tomorrow.getFullYear()}-${(tomorrow.getMonth()+1).toString().padStart(2,'0')}-${tomorrow.getDate().toString().padStart(2,'0')}`;
           targetOutLogs = logsMap.get(`${emp.id}_${nextDStr}`) || [];
         }
 
