@@ -1499,10 +1499,16 @@ app.get('/api/reports/absent', async (req, res) => {
       } 
     });
 
-    const [yyyy, mm] = [targetDate.getFullYear(), (targetDate.getMonth() + 1).toString().padStart(2, '0')];
-    const startDate = new Date(`${yyyy}-${mm}-01T00:00:00Z`);
-    const endDate = new Date(new Date(`${yyyy}-${mm}-01T00:00:00Z`).setMonth(new Date(`${yyyy}-${mm}-01T00:00:00Z`).getMonth() + 1));
-          
+    const yyyy = targetDate.getFullYear();
+    const mm = (targetDate.getMonth() + 1).toString().padStart(2, '0');
+    const dd = targetDate.getDate().toString().padStart(2, '0');
+    const targetDateStr = `${yyyy}-${mm}-${dd}`;
+
+    const startDate = new Date(targetDate);
+    startDate.setHours(0,0,0,0);
+    const endDate = new Date(targetDate);
+    endDate.setHours(23,59,59,999);
+
     // Ambil dari H-1 sore sampai H+1 pagi untuk antisipasi timezone
     const logs = await prisma.attendance.findMany({
       where: {
@@ -1513,7 +1519,16 @@ app.get('/api/reports/absent', async (req, res) => {
       }
     });
 
-    const presentIds = new Set(logs.map(l => l.employeeId));
+    const getJktDateStr = (d: Date) => {
+      const jktD = new Date(d.getTime() + 7 * 60 * 60 * 1000);
+      const y = jktD.getUTCFullYear();
+      const m = (jktD.getUTCMonth() + 1).toString().padStart(2, '0');
+      const day = jktD.getUTCDate().toString().padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    };
+
+    const todayLogs = logs.filter(l => getJktDateStr(l.timestamp) === targetDateStr);
+    const presentIds = new Set(todayLogs.map(l => l.employeeId));
     const absentList = [];
 
     for (const emp of employees) {
