@@ -213,7 +213,12 @@ const RecapPage = () => {
   ).sort((a, b) => a.employeeName.localeCompare(b.employeeName));
 
   return (
-    <div className="max-w-7xl mx-auto pb-20" style={{ fontFamily: "'Open Sans', sans-serif" }}>
+    <div className="max-w-7xl mx-auto pb-20 recap-container">
+      <style>{`
+        .recap-container, .recap-container * {
+          font-family: 'Open Sans', sans-serif !important;
+        }
+      `}</style>
       <Toaster 
         toastOptions={{
           style: {
