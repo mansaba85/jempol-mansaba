@@ -72,9 +72,9 @@ const RecapPage = () => {
         <head>
           <title>Laporan_Rekap_Presensi_${periode}</title>
           <style>
-            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+            @import url('https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,400;0,600;0,800;1,400&display=swap');
             body { 
-              font-family: 'Inter', sans-serif; 
+              font-family: 'Open Sans', sans-serif; 
               padding: 40px; 
               color: #1a1a1a;
               line-height: 1.5;
@@ -213,7 +213,7 @@ const RecapPage = () => {
   ).sort((a, b) => a.employeeName.localeCompare(b.employeeName));
 
   return (
-    <div className="max-w-7xl mx-auto pb-20">
+    <div className="max-w-7xl mx-auto pb-20" style={{ fontFamily: "'Open Sans', sans-serif" }}>
       <Toaster 
         toastOptions={{
           style: {
