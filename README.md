@@ -88,5 +88,33 @@ Aplikasi akan aktif di `http://localhost:3001`.
 
 ---
 
+## 🛠️ Buku Saku IT: Troubleshooting Jaringan & Server
+**Kombinasi:** Proxmox (Lokal Sekolah) + Portainer + VPS aaPanel (IP VPS: 62.72.7.236)
+
+### KASUS 1: Internet Sekolah Sempat Mati / Mati Lampu
+**Gejala:** Website `jariku.manubanyuputih.id` bisa dibuka tampilannya (karena PWA/Cache), tapi tidak bisa login (gagal sinkronisasi / semua data 0).
+**Penyebab:** Terowongan SSH (*Reverse Tunnel*) antara Proxmox Sekolah dan VPS terputus, dan port di VPS mengalami "nyangkut" (*zombie port*).
+
+**Solusi Langkah Demi Langkah:**
+1. **Buka Terminal di VPS aaPanel (IP: 62.72.7.236)** dan bersihkan port yang nyangkut dengan mengetik:
+   ```bash
+   fuser -k 8080/tcp
+   ```
+2. **Buka Terminal di Proxmox Lokal Sekolah (CT Portainer)** dan jalankan ulang terowongan:
+   ```bash
+   systemctl restart mansaba-tunnel.service
+   ```
+3. **(Opsional)** Jika masih lambat, masuk ke web Portainer lokal, centang kontainer `mansaba_app`, lalu tekan **Restart**.
+
+### KASUS 2: Cek Cepat Kesehatan Server Lokal
+Jika ada guru komplain tidak bisa absen melalui HP dari rumah:
+1. Saat di lingkungan sekolah (pakai WiFi lokal), coba akses alamat ini:
+   ```text
+   http://192.168.8.138:8085/
+   ```
+2. Jika halaman ini **bisa dibuka** dengan lancar, berarti server lokal 100% sehat. Masalah utamanya pasti ada di jaringan/tunnel (kembali lakukan Solusi KASUS 1).
+
+---
+
 ## 📜 Lisensi
 Dikembangkan untuk internal **MA NU 01 Banyuputih**. Seluruh data dan hak cipta milik institusi terkait.
