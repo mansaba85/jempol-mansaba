@@ -906,10 +906,11 @@ app.get('/api/reports/detailed', async (req, res) => {
     });
     if (!emp) return res.status(404).json({ error: 'Pegawai tidak ditemukan' });
 
+    const extendedEnd = new Date(end.getTime() + 24 * 60 * 60 * 1000);
     const logs = await prisma.attendance.findMany({
       where: { 
         employeeId: empId,
-        timestamp: { gte: start, lte: end }
+        timestamp: { gte: start, lte: extendedEnd }
       },
       orderBy: { timestamp: 'asc' }
     });
