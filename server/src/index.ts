@@ -642,7 +642,8 @@ const runSyncAll = async (onProgress?: (step: string, percent: number, details?:
         }
 
         const last = await prisma.attendance.findFirst({ where: { deviceId: dev.id }, orderBy: { timestamp: 'desc' } });
-        const lastTs = last ? last.timestamp.getTime() : 0;
+        // Mundur 7 hari untuk mengamankan data telat/jaringan putus
+        const safeLastTs = last ? last.timestamp.getTime() - (7 * 24 * 60 * 60 * 1000) : 0;
         
         const logsToSave: any[] = [];
         for (const l of logs.data) {
@@ -650,7 +651,7 @@ const runSyncAll = async (onProgress?: (step: string, percent: number, details?:
           const tapTime = new Date(l.recordTime);
           const tapYear = tapTime.getFullYear();
           
-          if (tapYear < 2020 || tapYear > 2030 || tapTime.getTime() <= lastTs || !empMap.has(uid)) continue;
+          if (tapYear < 2020 || tapYear > 2030 || tapTime.getTime() <= safeLastTs || !empMap.has(uid)) continue;
 
           const emp = empMap.get(uid)!;
           const formatTime = (d: Date) => d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
@@ -771,14 +772,15 @@ app.get('/api/machine/sync-one/:id', async (req, res) => {
 
     sendProgress(`Memproses ${logs.data.length} log...`, 70);
     const last = await prisma.attendance.findFirst({ where: { deviceId: devId }, orderBy: { timestamp: 'desc' } });
-    const lastTs = last ? last.timestamp.getTime() : 0;
+    // Mundur 7 hari untuk mengamankan data telat/jaringan putus
+    const safeLastTs = last ? last.timestamp.getTime() - (7 * 24 * 60 * 60 * 1000) : 0;
     
     const logsToSave: any[] = [];
     for (const l of logs.data) {
         const uid = parseInt(l.deviceUserId);
         const tapTime = new Date(l.recordTime);
         const tapYear = tapTime.getFullYear();
-        if (tapYear < 2020 || tapYear > 2030 || tapTime.getTime() <= lastTs || !empMap.has(uid)) continue;
+        if (tapYear < 2020 || tapYear > 2030 || tapTime.getTime() <= safeLastTs || !empMap.has(uid)) continue;
 
         const emp = empMap.get(uid)!;
         const formatTime = (d: Date) => d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
