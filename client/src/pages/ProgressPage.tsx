@@ -90,7 +90,7 @@ const ProgressPage = () => {
                    return (
                      <div key={i} className="flex-1 h-full flex flex-col items-center justify-end gap-2 z-10 group">
                         <div className="w-full relative flex justify-center h-full items-end group-hover:-translate-y-1 transition-transform">
-                           <div className="w-full max-w-[40px] bg-gradient-to-t from-blue-600 to-blue-400 rounded-t-xl shadow-lg shadow-blue-500/20 relative flex justify-center" style={{ height: `${percent}%` }}>
+                           <div className="w-full max-w-[40px] bg-blue-500 hover:bg-blue-400 transition-colors rounded-t-xl shadow-lg shadow-blue-500/30 relative flex justify-center" style={{ height: `${percent}%` }}>
                               {percent > 10 && <span className="text-[8px] font-bold text-white mt-2">{percent}%</span>}
                               <div className="opacity-0 group-hover:opacity-100 absolute -top-12 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] py-1 px-2 rounded-lg font-bold whitespace-nowrap transition-opacity">
                                  Hadir: {percent}% <br/> ({m.totalHadir} dari {totalWork} Hari)
