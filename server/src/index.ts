@@ -1179,13 +1179,21 @@ app.get('/api/reports/monthly', async (req, res) => {
       let cd = new Date(start);
       while (cd <= end) {
         const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(cd);
-        let tt: any = null; const ep = emp.employeepattern[0];
-        if (ep && ep.shiftpattern?.startDate) {
-          const dS = new Date(ep.shiftpattern.startDate); dS.setHours(0,0,0,0);
-          const dC = new Date(cd); dC.setHours(0,0,0,0);
-          const diff = Math.round((dC.getTime() - dS.getTime()) / 86400000);
+        let tt: any = null; 
+        const dC = new Date(cd); dC.setHours(0,0,0,0);
+        const cTs = dC.getTime();
+        const ep = emp.employeepattern?.find((p: any) => {
+           const sTs = new Date(p.startDate).setHours(0,0,0,0);
+           const eTs = p.endDate ? new Date(p.endDate).setHours(23,59,59,999) : Infinity;
+           return cTs >= sTs && cTs <= eTs;
+        });
+
+        if (ep && ep.shiftpattern) {
+          const dS = new Date(ep.startDate); dS.setHours(0,0,0,0);
+          const diff = Math.round((cTs - dS.getTime()) / 86400000);
           if (diff >= 0) {
-            const dy = (diff % ep.shiftpattern.cycleDays) + 1;
+            const dayOffset = (dS.getDay() + 6) % 7;
+            const dy = ((diff + dayOffset) % ep.shiftpattern.cycleDays) + 1;
             const ci = ep.shiftpattern.shiftpatternitem.find(i => i.dayNumber === dy);
             if (ci?.timetable) tt = ci.timetable;
           }
@@ -1324,6 +1332,120 @@ app.get('/api/reports/monthly', async (req, res) => {
     }
     res.json(results);
   } catch (error) { res.status(500).json({ error: 'Gagal ringkasan' }); }
+});
+
+app.get('/api/reports/progress', async (req, res) => {
+  try {
+    const year = parseInt(String(req.query.year)) || new Date().getFullYear();
+    const startYear = new Date(year, 0, 1);
+    const endYear = new Date(year, 11, 31, 23, 59, 59);
+
+    const employees = await prisma.employee.findMany({ include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } } } } });
+    const allLogs = await prisma.attendance.findMany({ where: { timestamp: { gte: startYear, lte: endYear } }, orderBy: { timestamp: 'asc' } });
+    const hList = await prisma.holiday.findMany({ where: { date: { gte: startYear, lte: endYear } } });
+
+    const getJktDateStr = (date: Date) => {
+      const d = new Date(date.getTime() + 7 * 60 * 60 * 1000);
+      return `${d.getUTCFullYear()}-${(d.getUTCMonth()+1).toString().padStart(2,'0')}-${d.getUTCDate().toString().padStart(2,'0')}`;
+    };
+
+    const logsMap = new Map<string, any[]>();
+    allLogs.forEach(l => {
+      const dateStr = getJktDateStr(l.timestamp);
+      const key = `${l.employeeId}_${dateStr}`;
+      if (!logsMap.has(key)) logsMap.set(key, []);
+      logsMap.get(key)!.push(l);
+    });
+
+    const monthlyProgress: any[] = [];
+    const now = new Date();
+    
+    for (let m = 0; m < 12; m++) {
+      const startMonth = new Date(year, m, 1);
+      const endMonth = new Date(year, m + 1, 0); 
+      let totalHadir = 0, totalTelat = 0, totalAlpa = 0;
+      const employeeStats: any[] = [];
+
+      if (startMonth > now) {
+         monthlyProgress.push({ month: m + 1, monthName: startMonth.toLocaleString('id-ID', { month: 'long' }), totalHadir: 0, totalTelat: 0, totalAlpa: 0, employees: [] });
+         continue;
+      }
+
+      for (const emp of employees) {
+        let empHadir = 0, empTelat = 0, empAlpa = 0;
+        let cd = new Date(startMonth);
+        while (cd <= endMonth) {
+          if (cd > now) break;
+
+          const dateStr = getJktDateStr(cd);
+          let tt: any = null; 
+          const dC = new Date(cd); dC.setHours(0,0,0,0);
+          const cTs = dC.getTime();
+          const ep = emp.employeepattern?.find((p: any) => {
+             const sTs = new Date(p.startDate).setHours(0,0,0,0);
+             const eTs = p.endDate ? new Date(p.endDate).setHours(23,59,59,999) : Infinity;
+             return cTs >= sTs && cTs <= eTs;
+          });
+
+          if (ep && ep.shiftpattern) {
+            const dS = new Date(ep.startDate); dS.setHours(0,0,0,0);
+            const diff = Math.round((cTs - dS.getTime()) / 86400000);
+            if (diff >= 0) {
+              const dayOffset = (dS.getDay() + 6) % 7;
+              const dy = ((diff + dayOffset) % ep.shiftpattern.cycleDays) + 1;
+              const ci = ep.shiftpattern.shiftpatternitem.find(i => i.dayNumber === dy);
+              if (ci?.timetable) tt = ci.timetable;
+            }
+          }
+
+          const dayHoliday = hList.find(h => getJktDateStr(h.date) === dateStr);
+          if (dayHoliday) {
+             let isAffected = false;
+             if (dayHoliday.isGlobal) isAffected = true;
+             else {
+               const roles = (dayHoliday.affectedRoles || '').split(',').map(s => s.trim().toUpperCase());
+               const patterns = (dayHoliday.affectedPatterns || '').split(',').map(s => s.trim());
+               if (roles.includes(String(emp.role || '').toUpperCase()) || patterns.includes(String(ep?.patternId || ''))) {
+                 isAffected = true;
+               }
+             }
+             if (isAffected) tt = null;
+          }
+
+          if (tt) {
+             const dLogs = logsMap.get(`${emp.id}_${dateStr}`) || [];
+             if (dLogs.length > 0) {
+                empHadir++; totalHadir++;
+                const iLog = dLogs[0];
+                const iD = new Date(iLog.timestamp.getTime() + 7 * 60 * 60 * 1000);
+                const iH = iD.getUTCHours();
+                const iM = iD.getUTCMinutes();
+                const [tH, tM] = tt.jamMasuk.split(/[:.]/).map(Number);
+                const diffM = (iH * 60 + iM) - (tH * 60 + tM);
+                if (diffM > 0) { empTelat++; totalTelat++; }
+             } else {
+                empAlpa++; totalAlpa++;
+             }
+          }
+          cd.setDate(cd.getDate() + 1);
+        }
+        
+        employeeStats.push({ id: emp.id, name: emp.name, role: emp.role, hadir: empHadir, telat: empTelat, alpa: empAlpa });
+      }
+
+      monthlyProgress.push({
+         month: m + 1,
+         monthName: startMonth.toLocaleString('id-ID', { month: 'long' }),
+         totalHadir,
+         totalTelat,
+         totalAlpa,
+         employees: employeeStats
+      });
+    }
+    res.json(monthlyProgress);
+  } catch (err) {
+    res.status(500).json({ error: 'Gagal memuat progress' });
+  }
 });
 
 app.get('/api/honor/recap', async (req, res) => {
