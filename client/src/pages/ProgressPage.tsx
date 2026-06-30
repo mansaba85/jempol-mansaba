@@ -12,8 +12,12 @@ const ProgressPage = () => {
   const fetchProgress = async (y: number) => {
     setLoading(true);
     try {
-      const res = await axios.get(`http://${window.location.hostname}:3001/api/reports/progress?year=${y}`);
-      setData(res.data);
+      const res = await axios.get(`/api/reports/progress?year=${y}`);
+      if (Array.isArray(res.data)) {
+         setData(res.data);
+      } else {
+         setData([]);
+      }
     } catch (err) {
       console.error(err);
     }
@@ -48,7 +52,7 @@ const ProgressPage = () => {
     return Array.from(empMap.values());
   }, [data]);
 
-  const filteredEmployees = employees.filter(e => e.name.toLowerCase().includes(search.toLowerCase()));
+  const filteredEmployees = employees.filter((e: any) => (e.name || '').toLowerCase().includes(search.toLowerCase()));
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
