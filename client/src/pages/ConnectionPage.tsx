@@ -44,7 +44,8 @@ const ConnectionPage = () => {
     setLoading(true);
     setSyncComplete(false);
     setProgress({ step: "Memulai Sinkronisasi Semua Perangkat...", percent: 0, details: "" });
-    const eventSource = new EventSource('/api/machine/sync-all');
+    const token = localStorage.getItem('mansaba_token');
+    const eventSource = new EventSource(`/api/machine/sync-all?token=${token}`);
     
     eventSource.onmessage = async (event) => {
       const update = JSON.parse(event.data);

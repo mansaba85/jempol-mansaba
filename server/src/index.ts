@@ -93,7 +93,8 @@ app.get('/api/settings/public', async (req, res) => {
 // Middleware for authentication
 const authenticateToken = (req: any, res: any, next: any) => {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  // Allow token from query string (required for EventSource SSE)
+  const token = (authHeader && authHeader.split(' ')[1]) || req.query.token;
 
   if (!token) return res.status(401).json({ message: 'Akses ditolak. Silakan login.' });
 
@@ -222,12 +223,14 @@ app.post('/api/patterns', async (req, res) => {
         category,
         cycleDays,
         startDate: startDate ? new Date(startDate) : null,
-        shiftpatternitem: {
-          create: items.map((it: any) => ({
-            dayNumber: parseInt(it.dayNumber),
-            timetableId: parseInt(it.timetableId)
-          }))
-        }
+        ...(items && items.length > 0 ? {
+          shiftpatternitem: {
+            create: items.map((it: any) => ({
+              dayNumber: parseInt(it.dayNumber),
+              timetableId: parseInt(it.timetableId)
+            }))
+          }
+        } : {})
       }
     });
     res.json(pattern);
@@ -282,7 +285,7 @@ app.delete('/api/patterns/:id', async (req, res) => {
 app.get('/api/employees', async (req, res) => {
   const employees = await prisma.employee.findMany({
     include: { 
-      employeepattern: { include: { shiftpattern: true }, orderBy: { id: 'desc' }, take: 1 } 
+      employeepattern: { include: { shiftpattern: true }, orderBy: { startDate: 'desc' } } 
     },
     orderBy: { id: 'asc' }
   });
@@ -322,12 +325,22 @@ app.post('/api/employees', async (req, res) => {
   });
 
   if (patternId && patternId !== 'none') {
-    await prisma.employeepattern.deleteMany({ where: { employeeId: empId } });
+    const newStart = new Date(patternStartDate || new Date());
+    const activePattern = await prisma.employeepattern.findFirst({
+        where: { employeeId: empId, endDate: null },
+        orderBy: { startDate: 'desc' }
+    });
+    if (activePattern) {
+        await prisma.employeepattern.update({
+            where: { id: activePattern.id },
+            data: { endDate: new Date(newStart.getTime() - 86400000) }
+        });
+    }
     await prisma.employeepattern.create({
       data: {
         employeeId: empId,
         patternId: parseInt(String(patternId)),
-        startDate: new Date(patternStartDate || new Date())
+        startDate: newStart
       }
     });
   }
@@ -358,14 +371,29 @@ app.put('/api/employees/:id', async (req, res) => {
 app.post('/api/employees/bulk-pattern', async (req, res) => {
   const { employeeIds, patternId, startDate } = req.body;
   try {
-    await prisma.employeepattern.deleteMany({ where: { employeeId: { in: employeeIds } } });
-    await prisma.employeepattern.createMany({
-      data: employeeIds.map((id: number) => ({
-        employeeId: id,
-        patternId: parseInt(patternId),
-        startDate: new Date(startDate)
-      }))
-    });
+    for (const id of employeeIds) {
+      const newStart = new Date(startDate);
+      const activePattern = await prisma.employeepattern.findFirst({
+        where: { employeeId: id, endDate: null },
+        orderBy: { startDate: 'desc' }
+      });
+
+      if (activePattern) {
+        const endD = new Date(newStart.getTime() - 86400000);
+        await prisma.employeepattern.update({
+          where: { id: activePattern.id },
+          data: { endDate: endD }
+        });
+      }
+
+      await prisma.employeepattern.create({
+        data: {
+          employeeId: id,
+          patternId: parseInt(patternId),
+          startDate: newStart
+        }
+      });
+    }
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Gagal plotting massal' });
@@ -661,8 +689,14 @@ const runSyncAll = async (onProgress?: (step: string, percent: number, details?:
 
           // 1. Check Today's Schedule
           for (const ap of emp.employeepattern) {
-              const diffDays = Math.floor((tapTime.getTime() - ap.startDate.getTime()) / (1000 * 60 * 60 * 24));
-              const dayInCycle = (diffDays % ap.shiftpattern.cycleDays) + 1;
+              const tapTs = tapTime.getTime();
+              const startTs = ap.startDate.getTime();
+              const endTs = ap.endDate ? ap.endDate.getTime() + 86399999 : Infinity;
+              if (tapTs < startTs || tapTs > endTs) continue;
+
+              const diffDays = Math.floor((tapTs - startTs) / (1000 * 60 * 60 * 24));
+              const dayOffset = (ap.startDate.getDay() + 6) % 7;
+              const dayInCycle = ((diffDays + dayOffset) % ap.shiftpattern.cycleDays) + 1;
               const item = ap.shiftpattern.shiftpatternitem.find(i => i.dayNumber === dayInCycle);
               if (item && item.timetable) {
                   const tt = item.timetable;
@@ -675,8 +709,14 @@ const runSyncAll = async (onProgress?: (step: string, percent: number, details?:
           if (!type) {
               const yesterday = new Date(tapTime.getTime() - 86400000);
               for (const ap of emp.employeepattern) {
-                  const diffDays = Math.floor((yesterday.getTime() - ap.startDate.getTime()) / (1000 * 60 * 60 * 24));
-                  const dayInCycle = (diffDays % ap.shiftpattern.cycleDays) + 1;
+                  const yTs = yesterday.getTime();
+                  const sTs = ap.startDate.getTime();
+                  const eTs = ap.endDate ? ap.endDate.getTime() + 86399999 : Infinity;
+                  if (yTs < sTs || yTs > eTs) continue;
+
+                  const diffDays = Math.floor((yTs - sTs) / (1000 * 60 * 60 * 24));
+                  const dayOffset = (ap.startDate.getDay() + 6) % 7;
+                  const dayInCycle = ((diffDays + dayOffset) % ap.shiftpattern.cycleDays) + 1;
                   const item = ap.shiftpattern.shiftpatternitem.find(i => i.dayNumber === dayInCycle);
                   if (item && item.timetable) {
                       const tt = item.timetable;
@@ -940,16 +980,25 @@ app.get('/api/reports/detailed', async (req, res) => {
     while (cd <= end) {
       const dateStr = dateFormatter.format(cd);
       let tt: any = null;
-      const ep = emp.employeepattern[0];
+      const dC = new Date(cd); dC.setHours(0,0,0,0);
+      const cTs = dC.getTime();
       
-      if (ep && ep.shiftpattern?.startDate) {
-        const dS = new Date(ep.shiftpattern.startDate); dS.setHours(0,0,0,0);
-        const dC = new Date(cd); dC.setHours(0,0,0,0);
-        const diff = Math.round((dC.getTime() - dS.getTime()) / 86400000);
-        if (diff >= 0) {
-          const dy = (diff % ep.shiftpattern.cycleDays) + 1;
-          const ci = ep.shiftpattern.shiftpatternitem.find(i => i.dayNumber === dy);
-          if (ci?.timetable) tt = ci.timetable;
+      if (emp.employeepattern && emp.employeepattern.length > 0) {
+        const ep = emp.employeepattern.find((p: any) => {
+           const sTs = new Date(p.startDate).setHours(0,0,0,0);
+           const eTs = p.endDate ? new Date(p.endDate).setHours(23,59,59,999) : Infinity;
+           return cTs >= sTs && cTs <= eTs;
+        });
+
+        if (ep) {
+          const dS = new Date(ep.startDate); dS.setHours(0,0,0,0);
+          const diff = Math.round((cTs - dS.getTime()) / 86400000);
+          if (diff >= 0) {
+            const dayOffset = (dS.getDay() + 6) % 7;
+            const dy = ((diff + dayOffset) % ep.shiftpattern.cycleDays) + 1;
+            const ci = ep.shiftpattern.shiftpatternitem.find(i => i.dayNumber === dy);
+            if (ci?.timetable) tt = ci.timetable;
+          }
         }
       }
 
@@ -1336,17 +1385,24 @@ app.get('/api/honor/recap', async (req, res) => {
       const cd = new Date(cdLoop);
       
       let tt: any = null; 
-      const ep = emp.employeepattern && emp.employeepattern[0];
+      const dC = new Date(cd); dC.setHours(0,0,0,0);
+      const cTs = dC.getTime();
+
+      const ep = emp.employeepattern?.find((p: any) => {
+         const sTs = new Date(p.startDate).setHours(0,0,0,0);
+         const eTs = p.endDate ? new Date(p.endDate).setHours(23,59,59,999) : Infinity;
+         return cTs >= sTs && cTs <= eTs;
+      });
+
       if (ep && ep.shiftpattern) {
-        const dS = new Date(ep.shiftpattern.startDate);
+        const dS = new Date(ep.startDate);
         dS.setHours(0,0,0,0);
-        const dC = new Date(cd);
-        dC.setHours(0,0,0,0);
-        const diffTime = dC.getTime() - dS.getTime();
+        const diffTime = cTs - dS.getTime();
         const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
         
         if (diffDays >= 0) {
-          const dayCycle = (diffDays % ep.shiftpattern.cycleDays) + 1;
+          const dayOffset = (dS.getDay() + 6) % 7;
+          const dayCycle = ((diffDays + dayOffset) % ep.shiftpattern.cycleDays) + 1;
           const ci = ep.shiftpattern.shiftpatternitem.find(i => i.dayNumber === dayCycle);
           if (ci && ci.timetable) tt = ci.timetable;
         }

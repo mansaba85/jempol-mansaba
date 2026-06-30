@@ -73,7 +73,8 @@ const EmployeesPage = () => {
     setIsSyncing(true);
     setSyncProgress({ step: 'Memulai...', percent: 0 });
     
-    const eventSource = new EventSource(`${API_URL}/machine/sync-employees`);
+    const token = localStorage.getItem('mansaba_token');
+    const eventSource = new EventSource(`${API_URL}/machine/sync-employees?token=${token}`);
     
     eventSource.onmessage = (event) => {
       const data = JSON.parse(event.data);
@@ -349,12 +350,16 @@ const EmployeesPage = () => {
                      </span>
                   </td>
                   <td className="mansaba-td">
-                     <div className="flex items-center gap-2">
+                     <div className="flex flex-col gap-1.5 min-w-[140px] max-h-32 overflow-y-auto custom-scrollbar pr-2">
                         {emp.assignedPatterns && emp.assignedPatterns.length > 0 ? (
-                           <div className="flex flex-col">
-                              <span className="text-sm font-semibold text-slate-700">{emp.assignedPatterns[0].pattern.name}</span>
-                              <span className="text-[10px] text-slate-400 font-medium italic">Mulai: {format(new Date(emp.assignedPatterns[0].startDate), 'dd/MM/yy')}</span>
-                           </div>
+                           emp.assignedPatterns.map((ap: any, i: number) => (
+                              <div key={i} className={`flex flex-col p-2 rounded-lg border transition-all ${!ap.endDate ? 'bg-blue-50 border-blue-200 shadow-sm shadow-blue-500/5' : 'bg-slate-50 border-slate-100 opacity-60 hover:opacity-100'}`}>
+                                 <span className={`text-xs font-semibold ${!ap.endDate ? 'text-blue-700' : 'text-slate-600'}`}>{ap.pattern.name}</span>
+                                 <span className="text-[9px] font-bold uppercase tracking-wider mt-0.5 text-slate-400">
+                                    {format(new Date(ap.startDate), 'dd MMM yy')} {ap.endDate ? `- ${format(new Date(ap.endDate), 'dd MMM yy')}` : '- Aktif'}
+                                 </span>
+                              </div>
+                           ))
                         ) : (
                            <span className="text-xs text-rose-400 italic font-semibold">Belum dipasang pola</span>
                         )}

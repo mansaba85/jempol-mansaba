@@ -62,6 +62,7 @@ model employeepattern {
   employeeId   Int
   patternId    Int
   startDate    DateTime
+  endDate      DateTime?
   employee     employee     @relation(fields: [employeeId], references: [id], map: "EmployeePattern_employeeId_fkey")
   shiftpattern shiftpattern @relation(fields: [patternId], references: [id], map: "EmployeePattern_patternId_fkey")
 
