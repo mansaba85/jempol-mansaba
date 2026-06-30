@@ -24,11 +24,7 @@ const ProgressPage = () => {
     fetchProgress(year);
   }, [year]);
 
-  // Kalkulasi max value untuk tinggi grafik global
-  const maxGlobalHadir = useMemo(() => {
-    if (data.length === 0) return 0;
-    return Math.max(...data.map(m => m.totalHadir));
-  }, [data]);
+
 
   // Extract unik employees
   const employees = useMemo(() => {
@@ -89,13 +85,15 @@ const ProgressPage = () => {
                 </div>
 
                 {data.map((m, i) => {
-                   const height = maxGlobalHadir > 0 ? (m.totalHadir / maxGlobalHadir) * 100 : 0;
+                   const totalWork = m.totalHadir + m.totalAlpa;
+                   const percent = totalWork > 0 ? Math.round((m.totalHadir / totalWork) * 100) : 0;
                    return (
                      <div key={i} className="flex-1 flex flex-col items-center gap-2 z-10 group">
                         <div className="w-full relative flex justify-center h-full items-end group-hover:-translate-y-1 transition-transform">
-                           <div className="w-full max-w-[40px] bg-gradient-to-t from-blue-600 to-blue-400 rounded-t-xl shadow-lg shadow-blue-500/20 relative" style={{ height: `${height}%` }}>
+                           <div className="w-full max-w-[40px] bg-gradient-to-t from-blue-600 to-blue-400 rounded-t-xl shadow-lg shadow-blue-500/20 relative flex justify-center" style={{ height: `${percent}%` }}>
+                              {percent > 10 && <span className="text-[8px] font-bold text-white mt-2">{percent}%</span>}
                               <div className="opacity-0 group-hover:opacity-100 absolute -top-12 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] py-1 px-2 rounded-lg font-bold whitespace-nowrap transition-opacity">
-                                 Hadir: {m.totalHadir} <br/> Telat: {m.totalTelat}
+                                 Hadir: {percent}% <br/> ({m.totalHadir} dari {totalWork} Hari)
                               </div>
                            </div>
                         </div>
@@ -121,8 +119,6 @@ const ProgressPage = () => {
           {/* EMPLOYEES GRID */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
              {filteredEmployees.map(emp => {
-                const maxEmp = Math.max(...emp.monthly.map((m: any) => m.hadir + m.telat + m.alpa));
-                
                 return (
                   <div key={emp.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 hover:shadow-md transition-shadow">
                      <div className="flex items-center gap-3 mb-5 border-b border-slate-100 pb-4">
@@ -139,22 +135,24 @@ const ProgressPage = () => {
                      <div className="flex items-end gap-1 h-20 mb-2">
                         {emp.monthly.map((m: any, idx: number) => {
                            const isFuture = m.hadir === 0 && m.alpa === 0 && m.telat === 0;
-                           const total = m.hadir + m.telat + m.alpa;
-                           const height = maxEmp > 0 && !isFuture ? (m.hadir / maxEmp) * 100 : 0;
-                           const lateHeight = maxEmp > 0 && !isFuture ? (m.telat / maxEmp) * 100 : 0;
+                           const totalWork = m.hadir + m.alpa;
+                           const percentHadir = totalWork > 0 && !isFuture ? Math.round((m.hadir / totalWork) * 100) : 0;
+                           
+                           const percentTelat = totalWork > 0 && !isFuture ? Math.round((m.telat / totalWork) * 100) : 0;
+                           const percentTepat = Math.max(0, percentHadir - percentTelat);
 
                            return (
                              <div key={idx} className="flex-1 flex flex-col justify-end h-full gap-0.5 group relative">
                                 {!isFuture && (
                                   <>
-                                    <div className="w-full bg-rose-400 rounded-t-sm opacity-80" style={{ height: `${lateHeight}%` }}></div>
-                                    <div className="w-full bg-emerald-500 rounded-t-sm" style={{ height: `${height}%` }}></div>
+                                    <div className="w-full bg-rose-400 rounded-t-sm opacity-80" style={{ height: `${percentTelat}%` }}></div>
+                                    <div className="w-full bg-emerald-500 rounded-t-sm" style={{ height: `${percentTepat}%` }}></div>
                                   </>
                                 )}
                                 {isFuture && <div className="w-full h-1 bg-slate-100 rounded-full"></div>}
                                 
-                                <div className="opacity-0 group-hover:opacity-100 absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-slate-800 text-white text-[9px] py-1 px-1.5 rounded font-bold whitespace-nowrap z-20 pointer-events-none">
-                                  {m.monthName.substring(0,3)}: {m.hadir} Hadir, {m.telat} Telat
+                                <div className="opacity-0 group-hover:opacity-100 absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-slate-800 text-white text-[9px] py-1 px-1.5 rounded font-bold whitespace-nowrap z-20 pointer-events-none text-center">
+                                  {m.monthName.substring(0,3)}: {percentHadir}% Hadir <br/> ({m.hadir}/{totalWork} Hari)
                                 </div>
                              </div>
                            )
