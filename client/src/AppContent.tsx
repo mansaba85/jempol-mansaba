@@ -13,6 +13,7 @@ import RecapPage from './pages/RecapPage';
 import HonorPage from './pages/HonorPage';
 import RosterPage from './pages/RosterPage';
 import EmployeeDashboard from './pages/EmployeeDashboard';
+import ProgressPage from './pages/ProgressPage';
 import { Toaster } from 'react-hot-toast';
 import { useSettings } from './context/SettingsContext';
 import { useAuth } from './context/AuthContext';
@@ -71,6 +72,7 @@ function AppContent() {
                   <Route path="/recap" element={<RecapPage />} />
                   <Route path="/roster" element={<RosterPage />} />
                   <Route path="/honor" element={<HonorPage />} />
+                  <Route path="/progress" element={<ProgressPage />} />
                 </>
               )}
 

@@ -39,6 +39,7 @@ const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
         { path: '/reports/absent', label: 'Belum Hadir', icon: 'fa-solid fa-user-xmark' },
         { path: '/reports', label: 'Laporan Detil', icon: 'fa-solid fa-file-invoice' },
         { path: '/recap', label: 'Rekap Absensi', icon: 'fa-solid fa-chart-line' },
+        { path: '/progress', label: 'Tren Kehadiran', icon: 'fa-solid fa-chart-area' },
         { path: '/honor', label: 'Honor Transport', icon: 'fa-solid fa-money-check-dollar' },
       ]
     },
