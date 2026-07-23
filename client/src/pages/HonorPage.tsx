@@ -15,6 +15,7 @@ const HonorPage = () => {
   const [rates, setRates] = useState({
     rate_umum: '25000',
     rate_sertif: '25000',
+    rate_asn: '0',
     rate_tidak_disiplin: '10000',
     voucher_nominal: '30000',
     penalty_late_minutes: '0',
@@ -252,7 +253,7 @@ const HonorPage = () => {
                  </div>
                  <div class="emp-info">
                     <p class="emp-name">${h.employeeName}</p>
-                    <p class="emp-sub">ID: ${h.employeeId} | ${h.isSertifikasi ? 'SERTIF' : 'UMUM'}</p>
+                    <p class="emp-sub">ID: ${h.employeeId} | ${(h.category || (h.isSertifikasi ? 'SERTIF' : 'UMUM')).toUpperCase()}</p>
                  </div>
                  <div class="row">
                     <span class="label">Disiplin: &nbsp;&nbsp; ${h.disciplinedDays} x ${h.rateBruto?.toLocaleString('id-ID') || 0}</span>
@@ -369,11 +370,19 @@ const HonorPage = () => {
                             <td className="mansaba-td py-4">
                               <span className="text-sm font-semibold text-slate-800 uppercase">{h.employeeName}</span>
                             </td>
-                            <td className="mansaba-td text-center">
-                              <span className={`px-4 py-1.5 rounded-full text-[10px] font-bold tracking-wider ${h.isSertifikasi ? 'bg-blue-100/60 text-blue-600 border border-blue-200/50' : 'bg-slate-100/80 text-slate-500 border border-slate-200/50'}`}>
-                                  {h.isSertifikasi ? 'SERTIFIKASI' : 'UMUM'}
-                              </span>
-                            </td>
+                             <td className="mansaba-td text-center">
+                               {(() => {
+                                 const cat = String(h.category || (h.isSertifikasi ? 'SERTIFIKASI' : 'UMUM')).toUpperCase();
+                                 let colorClass = 'bg-slate-100/80 text-slate-500 border border-slate-200/50';
+                                 if (cat === 'SERTIFIKASI') colorClass = 'bg-blue-100/60 text-blue-600 border border-blue-200/50';
+                                 if (cat === 'ASN') colorClass = 'bg-emerald-100/60 text-emerald-600 border border-emerald-200/50';
+                                 return (
+                                   <span className={`px-4 py-1.5 rounded-full text-[10px] font-bold tracking-wider ${colorClass}`}>
+                                       {cat}
+                                   </span>
+                                 );
+                               })()}
+                             </td>
                             <td className="mansaba-td text-center text-slate-600">
                               {h.disciplinedDays}
                             </td>

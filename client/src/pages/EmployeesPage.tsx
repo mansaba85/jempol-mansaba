@@ -28,6 +28,7 @@ const EmployeesPage = () => {
     name: '', 
     nip: '', 
     role: 'GURU', 
+    category: 'UMUM',
     transportRate: 0,
     pin: ''
   });
@@ -232,7 +233,7 @@ const EmployeesPage = () => {
              </button>
 
              <button 
-               onClick={() => { setEditingId(null); setForm({id: '', name:'', nip:'', role:'GURU', transportRate:0, pin: ''}); setIsModalOpen(true); }}
+               onClick={() => { setEditingId(null); setForm({id: '', name:'', nip:'', role:'GURU', category: 'UMUM', transportRate:0, pin: ''}); setIsModalOpen(true); }}
                className="flex-1 sm:flex-none mansaba-btn-primary !py-2.5 shadow-lg shadow-blue-600/20"
              >
                <i className="fa-solid fa-plus"></i> <span className="hidden sm:inline">Tambah</span> Pegawai
@@ -345,9 +346,22 @@ const EmployeesPage = () => {
                      )}
                   </td>
                   <td className="mansaba-td text-center">
-                     <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${emp.role === 'GURU' ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                        {emp.role}
-                     </span>
+                     <div className="flex flex-col items-center gap-1">
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${emp.role === 'GURU' ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                           {emp.role}
+                        </span>
+                        {(() => {
+                           const cat = String(emp.category || (emp.isSertifikasi ? 'SERTIFIKASI' : 'UMUM')).toUpperCase();
+                           let catBg = 'bg-slate-100 text-slate-600';
+                           if (cat === 'SERTIFIKASI') catBg = 'bg-blue-100 text-blue-700';
+                           if (cat === 'ASN') catBg = 'bg-emerald-100 text-emerald-700 font-black';
+                           return (
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${catBg}`}>
+                                 {cat}
+                              </span>
+                           );
+                        })()}
+                     </div>
                   </td>
                   <td className="mansaba-td">
                      <div className="flex flex-col gap-1.5 min-w-[140px] max-h-32 overflow-y-auto custom-scrollbar pr-2">
@@ -370,14 +384,15 @@ const EmployeesPage = () => {
                         <button 
                           onClick={() => {
                              setEditingId(emp.id);
-                             setForm({
-                                id: String(emp.id),
-                                name: emp.name,
-                                nip: emp.nip || '',
-                                role: emp.role || 'GURU',
-                                transportRate: emp.transportRate || 0,
-                                pin: emp.pin || ''
-                             });
+                              setForm({
+                                 id: String(emp.id),
+                                 name: emp.name,
+                                 nip: emp.nip || '',
+                                 role: emp.role || 'GURU',
+                                 category: emp.category || (emp.isSertifikasi ? 'SERTIFIKASI' : 'UMUM'),
+                                 transportRate: emp.transportRate || 0,
+                                 pin: emp.pin || ''
+                              });
                              setIsModalOpen(true);
                           }}
                           className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all"
@@ -510,27 +525,36 @@ const EmployeesPage = () => {
                   </div>
                  
                  <div className="grid grid-cols-2 gap-5">
-                    <div className="space-y-2">
-                        <label className="text-sm font-semibold text-slate-700">Jabatan <span className="text-rose-500">*</span></label>
-                        <select className="mansaba-input" value={form.role} onChange={e => setForm({...form, role: e.target.value})}>
-                           <option value="GURU">GURU</option>
-                           <option value="STAFF">STAFF</option>
-                           <option value="SECURITY">SECURITY</option>
-                           <option value="CLEANING">CLEANING</option>
-                        </select>
-                    </div>
-                    <div className="space-y-2">
-                        <label className="text-sm font-semibold text-slate-700">Portal PIN (6 Digit)</label>
-                        <input 
-                           type="text" 
-                           className="mansaba-input" 
-                           maxLength={6} 
-                           value={form.pin} 
-                           onChange={e => setForm({...form, pin: e.target.value})} 
-                           placeholder="Untuk akses mandiri" 
-                        />
-                    </div>
-                 </div>
+                     <div className="space-y-2">
+                         <label className="text-sm font-semibold text-slate-700">Jabatan <span className="text-rose-500">*</span></label>
+                         <select className="mansaba-input" value={form.role} onChange={e => setForm({...form, role: e.target.value})}>
+                            <option value="GURU">GURU</option>
+                            <option value="STAFF">STAFF</option>
+                            <option value="SECURITY">SECURITY</option>
+                            <option value="CLEANING">CLEANING</option>
+                         </select>
+                     </div>
+                     <div className="space-y-2">
+                         <label className="text-sm font-semibold text-slate-700">Kategori Pegawai <span className="text-rose-500">*</span></label>
+                         <select className="mansaba-input font-bold" value={form.category} onChange={e => setForm({...form, category: e.target.value})}>
+                            <option value="UMUM">UMUM (Non-Sertif / Honor)</option>
+                            <option value="SERTIFIKASI">SERTIFIKASI (Guru Sertifikasi)</option>
+                            <option value="ASN">ASN (PNS / PPPK)</option>
+                         </select>
+                     </div>
+                  </div>
+
+                  <div className="space-y-2">
+                     <label className="text-sm font-semibold text-slate-700">Portal PIN (6 Digit)</label>
+                     <input 
+                        type="text" 
+                        className="mansaba-input" 
+                        maxLength={6} 
+                        value={form.pin} 
+                        onChange={e => setForm({...form, pin: e.target.value})} 
+                        placeholder="Untuk akses mandiri" 
+                     />
+                  </div>
 
                  <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700">Tunjangan Transport (TTP) per Hari</label>

@@ -48,9 +48,11 @@ const SettingsPage = () => {
     penalty_early_minutes: '240',
     rate_umum: '25000',
     rate_sertif: '25000',
+    rate_asn: '0',
     rate_tidak_disiplin: '10000',
     voucher_nominal: '30000'
   });
+  const [employeeCategories, setEmployeeCategories] = useState<Record<number, string>>({});
 
   const [activeTab, setActiveTab] = useState<'general' | 'financial' | 'holidays'>('general');
   const [holidays, setHolidays] = useState<any[]>([]);
@@ -85,6 +87,11 @@ const SettingsPage = () => {
       setSettings(prev => ({ ...prev, ...sMap }));
       
       setEmployees(eRes.data);
+      const catMap: Record<number, string> = {};
+      eRes.data.forEach((e: any) => {
+        catMap[e.id] = e.category || (e.isSertifikasi ? 'SERTIFIKASI' : 'UMUM');
+      });
+      setEmployeeCategories(catMap);
       setSertifikasiIds(eRes.data.filter((e: any) => e.isSertifikasi).map((e: any) => e.id));
       setHolidays(hRes.data);
       setPatterns(pRes.data);
@@ -100,7 +107,8 @@ const SettingsPage = () => {
       const payload = Object.entries(settings).map(([key, value]) => ({ key, value }));
       await axios.post(`${API_URL}/settings`, { 
         settings: payload,
-        sertifikasiIds 
+        sertifikasiIds,
+        employeeCategories
       });
       await refreshSettings();
       toast.success('Pengaturan berhasil disimpan');
@@ -373,14 +381,34 @@ const SettingsPage = () => {
                   </div>
                   <div className="max-h-[500px] overflow-y-auto no-scrollbar space-y-3 pr-2">
                      {filteredEmployees.map(emp => {
-                        const isSertif = sertifikasiIds.includes(emp.id);
+                        const currentCat = employeeCategories[emp.id] || (emp.isSertifikasi ? 'SERTIFIKASI' : 'UMUM');
                         return (
-                           <div key={emp.id} onClick={() => toggleSertifikasi(emp.id)} className={`flex items-center justify-between p-5 rounded-lg border transition-colors cursor-pointer ${isSertif ? 'bg-primary border-blue-200 shadow-lg' : 'bg-white/[0.01] border-slate-200 hover:border-blue-200'}`}>
-                              <div className="flex items-center gap-6">
-                                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-[11px] font-medium ${isSertif ? 'bg-white/20 text-slate-800' : 'bg-white/[0.03] text-slate-500 '}`}>{String(emp.id).padStart(3, '0')}</div>
-                                 <div><h4 className="text-sm font-medium text-slate-800">{emp.name}</h4><p className="text-[9px] font-medium mt-1 text-slate-500">ID: {emp.id} | {emp.role}</p></div>
+                           <div key={emp.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-slate-200 bg-white hover:border-blue-200 gap-3">
+                              <div className="flex items-center gap-4">
+                                 <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-[11px] font-bold text-slate-600 shrink-0">{String(emp.id).padStart(3, '0')}</div>
+                                 <div>
+                                    <h4 className="text-xs font-bold text-slate-800">{emp.name}</h4>
+                                    <p className="text-[9px] font-medium text-slate-400 mt-0.5">ID: {emp.id} | {emp.role || 'GURU'}</p>
+                                 </div>
                               </div>
-                              {isSertif ? <CheckCircle2 size={24} className="text-slate-800" /> : <div className="w-6 h-6 rounded-full border-2 border-slate-200"></div>}
+                              <div className="flex items-center gap-1.5 shrink-0 bg-slate-100 p-1 rounded-xl">
+                                 {(['UMUM', 'SERTIFIKASI', 'ASN'] as const).map(cat => {
+                                    const isSelected = currentCat === cat;
+                                    let activeBg = 'bg-slate-700 text-white shadow-sm';
+                                    if (cat === 'SERTIFIKASI') activeBg = 'bg-blue-600 text-white shadow-sm';
+                                    if (cat === 'ASN') activeBg = 'bg-emerald-600 text-white shadow-sm shadow-emerald-200';
+                                    return (
+                                       <button
+                                          key={cat}
+                                          type="button"
+                                          onClick={() => setEmployeeCategories(prev => ({ ...prev, [emp.id]: cat }))}
+                                          className={`px-3 py-1 rounded-lg text-[9px] font-black transition-all ${isSelected ? activeBg : 'text-slate-500 hover:text-slate-800'}`}
+                                       >
+                                          {cat}
+                                       </button>
+                                    );
+                                 })}
+                              </div>
                            </div>
                         );
                      })}
@@ -441,9 +469,9 @@ const SettingsPage = () => {
              <div className="mansaba-card !p-10 border-l-4 border-emerald-500">
                 <div className="flex items-center gap-4 mb-12 border-b border-slate-200 pb-8"><div className="w-12 h-12 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-xl flex items-center justify-center"><DollarSign size={24} /></div><h2 className="text-xl font-medium text-slate-800">Parameter <span className="text-emerald-400">Keuangan</span></h2></div>
                 <div className="space-y-8">
-                   {['rate_umum', 'rate_sertif', 'rate_tidak_disiplin', 'voucher_nominal'].map(key => (
+                   {['rate_umum', 'rate_sertif', 'rate_asn', 'rate_tidak_disiplin', 'voucher_nominal'].map(key => (
                       <div key={key} className="space-y-3">
-                         <label className="text-[10px] font-medium text-slate-500 tracking-[0.3em] flex justify-between px-2"><span>{key.replace('_', ' ').toUpperCase()}</span></label>
+                         <label className="text-[10px] font-medium text-slate-500 tracking-[0.3em] flex justify-between px-2"><span>{key.replace(/_/g, ' ').toUpperCase()}</span></label>
                          <div className="relative"><span className="absolute left-6 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">IDR</span><input type="number" className="mansaba-input w-full !pl-16 !py-5 font-medium text-lg" value={(settings as any)[key]} onChange={e => setSettings({...settings, [key]: e.target.value})} /></div>
                       </div>
                    ))}

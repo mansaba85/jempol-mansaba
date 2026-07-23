@@ -50,6 +50,7 @@ model employee {
   createdAt       DateTime          @default(now())
   updatedAt       DateTime
   isSertifikasi   Boolean           @default(false)
+  category        String?           @default("UMUM")
   pin             String?           @unique(map: "Employee_pin_key")
   attendance      attendance[]
   employeepattern employeepattern[]

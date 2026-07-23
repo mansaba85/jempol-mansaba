@@ -301,8 +301,9 @@ app.get('/api/employees', async (req, res) => {
 });
 
 app.post('/api/employees', async (req, res) => {
-  const { id, name, nip, role, transportRate, patternId, patternStartDate, pin } = req.body;
+  const { id, name, nip, role, transportRate, patternId, patternStartDate, pin, category } = req.body;
   const empId = parseInt(id);
+  const empCat = String(category || 'UMUM').toUpperCase();
   const employee = await prisma.employee.upsert({
     where: { id: empId },
     update: { 
@@ -311,6 +312,8 @@ app.post('/api/employees', async (req, res) => {
       role, 
       transportRate: parseFloat(String(transportRate || 0)),
       pin: pin ? String(pin) : undefined,
+      category: empCat,
+      isSertifikasi: empCat === 'SERTIFIKASI',
       updatedAt: new Date()
     },
     create: { 
@@ -320,6 +323,8 @@ app.post('/api/employees', async (req, res) => {
       role, 
       transportRate: parseFloat(String(transportRate || 0)),
       pin: pin ? String(pin) : undefined,
+      category: empCat,
+      isSertifikasi: empCat === 'SERTIFIKASI',
       updatedAt: new Date()
     }
   });
@@ -348,18 +353,24 @@ app.post('/api/employees', async (req, res) => {
 });
 
 app.put('/api/employees/:id', async (req, res) => {
-  const { name, nip, role, transportRate, pin } = req.body;
+  const { name, nip, role, transportRate, pin, category } = req.body;
   const empId = parseInt(req.params.id);
   try {
+    const updateData: any = { 
+      name, 
+      nip, 
+      role, 
+      transportRate: parseFloat(String(transportRate || 0)),
+      pin: pin ? String(pin) : undefined
+    };
+    if (category) {
+      const empCat = String(category).toUpperCase();
+      updateData.category = empCat;
+      updateData.isSertifikasi = empCat === 'SERTIFIKASI';
+    }
     const employee = await prisma.employee.update({
       where: { id: empId },
-      data: { 
-        name, 
-        nip, 
-        role, 
-        transportRate: parseFloat(String(transportRate || 0)),
-        pin: pin ? String(pin) : undefined
-      }
+      data: updateData
     });
     res.json(employee);
   } catch (error) {
@@ -966,12 +977,17 @@ app.get('/api/reports/detailed', async (req, res) => {
     
     const rU = parseInt(String(sMap.get('rate_umum') || 25000));
     const rS = parseInt(String(sMap.get('rate_sertif') || 25000));
+    const rA = parseInt(String(sMap.get('rate_asn') || 0));
     const rL = parseInt(String(sMap.get('rate_tidak_disiplin') || 10000));
     const pL = parseInt(sMap.get('penalty_late_minutes') || '5'); // Default 5
     const pE = parseInt(sMap.get('penalty_early_minutes') || '5'); // Default 5
     const vV = parseInt(String(sMap.get('voucher_nominal') || 0));
 
-    const rB = emp.isSertifikasi ? rS : rU;
+    const empCat = String(emp.category || (emp.isSertifikasi ? 'SERTIFIKASI' : 'UMUM')).toUpperCase();
+    let rB = rU;
+    if (empCat === 'ASN') rB = rA;
+    else if (empCat === 'SERTIFIKASI') rB = rS;
+    else rB = rU;
 
     const days = [];
     let dD = 0, nD = 0, tH = 0, tW = 0;
@@ -1454,7 +1470,11 @@ app.get('/api/honor/recap', async (req, res) => {
   const start = new Date(y, m - 1, 1), end = endOfMonth(start);
   const settings = await prisma.systemsetting.findMany();
   const sMap = new Map(settings.map(s => [s.key, s.value]));
-  const rU = parseInt(String(sMap.get('rate_umum') || 25000)), rS = parseInt(String(sMap.get('rate_sertif') || 25000)), rL = parseInt(String(sMap.get('rate_tidak_disiplin') || 10000)), vV = parseInt(String(sMap.get('voucher_nominal') || 30000));
+  const rU = parseInt(String(sMap.get('rate_umum') || 25000));
+  const rS = parseInt(String(sMap.get('rate_sertif') || 25000));
+  const rA = parseInt(String(sMap.get('rate_asn') || 0));
+  const rL = parseInt(String(sMap.get('rate_tidak_disiplin') || 10000));
+  const vV = parseInt(String(sMap.get('voucher_nominal') || 30000));
   const pL = parseInt(sMap.get('penalty_late_minutes') || '0');
   const pE = parseInt(sMap.get('penalty_early_minutes') || '0');
   const employees = await prisma.employee.findMany({ include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } } } } });
@@ -1627,12 +1647,18 @@ app.get('/api/honor/recap', async (req, res) => {
       cdLoop.setDate(cdLoop.getDate() + 1);
     }
 
-    const rB = emp.isSertifikasi ? rS : rU;
+    const empCat = String(emp.category || (emp.isSertifikasi ? 'SERTIFIKASI' : 'UMUM')).toUpperCase();
+    let rB = rU;
+    if (empCat === 'ASN') rB = rA;
+    else if (empCat === 'SERTIFIKASI') rB = rS;
+    else rB = rU;
+
     const bruto = (dD * rB) + (nD * rL);
     results.push({ 
       employeeId: emp.id, 
       employeeName: emp.name, 
       isSertifikasi: emp.isSertifikasi, 
+      category: empCat,
       totalHadir: tH, 
       disciplinedDays: dD, 
       nonDisciplinedDays: nD, 
@@ -1804,12 +1830,25 @@ app.post('/api/settings', async (req, res) => {
       });
     }
   }
+  if (req.body.employeeCategories) {
+    for (const [empIdStr, catStr] of Object.entries(req.body.employeeCategories)) {
+      const empId = Number(empIdStr);
+      const cat = String(catStr).toUpperCase();
+      await prisma.employee.update({
+        where: { id: empId },
+        data: { 
+          category: cat,
+          isSertifikasi: cat === 'SERTIFIKASI'
+        }
+      }).catch(() => {});
+    }
+  }
   if (req.body.sertifikasiIds) {
-    await prisma.employee.updateMany({ data: { isSertifikasi: false } });
+    await prisma.employee.updateMany({ data: { isSertifikasi: false, category: 'UMUM' } });
     if (req.body.sertifikasiIds.length > 0) {
       await prisma.employee.updateMany({ 
         where: { id: { in: req.body.sertifikasiIds.map(Number) } }, 
-        data: { isSertifikasi: true } 
+        data: { isSertifikasi: true, category: 'SERTIFIKASI' } 
       });
     }
   }
