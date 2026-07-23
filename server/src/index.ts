@@ -1840,10 +1840,11 @@ app.post('/api/settings', async (req, res) => {
           category: cat,
           isSertifikasi: cat === 'SERTIFIKASI'
         }
-      }).catch(() => {});
+      }).catch((err) => {
+        console.error(`[Update Category Error] ID ${empId}:`, err);
+      });
     }
-  }
-  if (req.body.sertifikasiIds) {
+  } else if (req.body.sertifikasiIds) {
     await prisma.employee.updateMany({ data: { isSertifikasi: false, category: 'UMUM' } });
     if (req.body.sertifikasiIds.length > 0) {
       await prisma.employee.updateMany({ 
