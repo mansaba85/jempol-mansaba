@@ -630,11 +630,15 @@ const ReportsPage = () => {
                               </td>
                               <td className="whitespace-nowrap text-sm font-semibold text-slate-800">{row.tanggal}</td>
                               <td className="text-center">
-                                 {row.jamMasuk && row.jamPulang ? (
-                                   <span className="text-xs font-medium text-slate-500">{row.jamMasuk} - {row.jamPulang}</span>
-                                 ) : (
-                                   <span className="text-xs font-medium text-slate-300">Libur / Tidak Ada Shift</span>
-                                 )}
+                                  {row.holidayName ? (
+                                    <span className={`text-xs font-bold px-2 py-1 rounded-md inline-block ${row.holidayType === 'TUGAS_LUAR' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
+                                       {row.holidayType === 'TUGAS_LUAR' ? '🚌 ' : '🏖️ '}{row.holidayName}
+                                    </span>
+                                  ) : row.jamMasuk && row.jamPulang ? (
+                                    <span className="text-xs font-medium text-slate-500">{row.jamMasuk} - {row.jamPulang}</span>
+                                  ) : (
+                                    <span className="text-xs font-medium text-slate-300">Libur / Tidak Ada Shift</span>
+                                  )}
                               </td>
                               
                               <td className="p-0 bg-emerald-50/50 border-x border-slate-100" onClick={e => e.stopPropagation()}>

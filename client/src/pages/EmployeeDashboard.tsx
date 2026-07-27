@@ -137,13 +137,19 @@ const EmployeeDashboard = () => {
                   {/* Compact Card Header */}
                   <div className="flex items-center justify-between mb-2.5 border-b border-slate-50 pb-2">
                      <div className="flex items-center gap-3">
-                        <div className={`w-9 h-9 rounded-lg flex flex-col items-center justify-center ${d.status === 'LIBUR' ? 'bg-slate-50 text-slate-400' : 'bg-emerald-50 text-emerald-600'}`}>
+                        <div className={`w-9 h-9 rounded-lg flex flex-col items-center justify-center ${d.holidayName ? (d.holidayType === 'TUGAS_LUAR' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600') : d.status === 'LIBUR' ? 'bg-slate-50 text-slate-400' : 'bg-emerald-50 text-emerald-600'}`}>
                            <span className="text-[7px] font-black uppercase leading-none">{format(new Date(d.date), 'EEE', { locale: id })}</span>
                            <span className="text-sm font-black leading-none mt-0.5">{format(new Date(d.date), 'dd')}</span>
                         </div>
                         <div>
                            <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{format(new Date(d.date), 'MMMM yyyy', { locale: id })}</h4>
-                           {d.status === 'LIBUR' && <span className="text-[7px] font-black bg-slate-100 text-slate-500 px-1 py-0.5 rounded-full uppercase mt-0.5 inline-block">Libur</span>}
+                           {d.holidayName ? (
+                             <span className={`text-[8px] font-bold px-2 py-0.5 rounded-md uppercase mt-0.5 inline-flex items-center gap-1 ${d.holidayType === 'TUGAS_LUAR' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                                {d.holidayType === 'TUGAS_LUAR' ? '🚌' : '🏖️'} {d.holidayName}
+                             </span>
+                           ) : d.status === 'LIBUR' ? (
+                             <span className="text-[7px] font-black bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full uppercase mt-0.5 inline-block">Libur</span>
+                           ) : null}
                         </div>
                      </div>
                      <div className="text-right">

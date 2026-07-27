@@ -1020,6 +1020,7 @@ app.get('/api/reports/detailed', async (req, res) => {
 
       // CHECK HOLIDAY / EVENT
       const dayHoliday = hList.find(h => dateFormatter.format(h.date) === dateStr);
+      let activeHoliday: any = null;
       if (dayHoliday) {
         let isAffected = false;
         if (dayHoliday.isGlobal) isAffected = true;
@@ -1033,13 +1034,24 @@ app.get('/api/reports/detailed', async (req, res) => {
           }
         }
         if (isAffected) {
+          activeHoliday = dayHoliday;
           if (dayHoliday.type === 'TUGAS_LUAR') {
             if (tt) {
               tW++;
               tH++;
               dD++;
               const ttp = emp.transportRate || rB;
-              days.push({ date: dateStr, status: 'HADIR (TUGAS LUAR)', lateM: 0, earlyM: 0, scanIn: '-', scanOut: '-', ttp });
+              days.push({ 
+                date: dateStr, 
+                status: 'HADIR (TUGAS LUAR)', 
+                holidayName: dayHoliday.name,
+                holidayType: dayHoliday.type || 'TUGAS_LUAR',
+                timetable: tt ? { name: tt.name, jamMasuk: tt.jamMasuk, jamPulang: tt.jamPulang } : null,
+                logs: { in: null, out: null }, 
+                lateMinutes: 0, 
+                earlyMinutes: 0, 
+                ttpValue: ttp 
+              });
               cd.setDate(cd.getDate() + 1);
               continue;
             }
@@ -1128,6 +1140,8 @@ app.get('/api/reports/detailed', async (req, res) => {
       days.push({
         date: dateStr,
         status,
+        holidayName: activeHoliday ? activeHoliday.name : null,
+        holidayType: activeHoliday ? (activeHoliday.type || 'LIBUR') : null,
         timetable: tt ? { name: tt.name, jamMasuk: tt.jamMasuk, jamPulang: tt.jamPulang } : null,
         logs: { in: iLog?.timestamp || null, out: oLog?.timestamp || null },
         lateMinutes: lateM,
@@ -1157,7 +1171,9 @@ app.get('/api/reports/detailed', async (req, res) => {
         lateMinutes: d.lateMinutes,
         earlyMinutes: d.earlyMinutes,
         ttpValue: d.ttpValue,
-        status: d.status
+        status: d.status,
+        holidayName: d.holidayName || null,
+        holidayType: d.holidayType || null
       };
     });
 
