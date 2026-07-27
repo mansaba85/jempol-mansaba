@@ -1018,7 +1018,7 @@ app.get('/api/reports/detailed', async (req, res) => {
         }
       }
 
-      // CHECK HOLIDAY
+      // CHECK HOLIDAY / EVENT
       const dayHoliday = hList.find(h => dateFormatter.format(h.date) === dateStr);
       if (dayHoliday) {
         let isAffected = false;
@@ -1032,7 +1032,21 @@ app.get('/api/reports/detailed', async (req, res) => {
             isAffected = true;
           }
         }
-        if (isAffected) tt = null; 
+        if (isAffected) {
+          if (dayHoliday.type === 'TUGAS_LUAR') {
+            if (tt) {
+              tW++;
+              tH++;
+              dD++;
+              const ttp = emp.transportRate || rB;
+              days.push({ date: dateStr, status: 'HADIR (TUGAS LUAR)', lateM: 0, earlyM: 0, scanIn: '-', scanOut: '-', ttp });
+              cd.setDate(cd.getDate() + 1);
+              continue;
+            }
+          } else {
+            tt = null;
+          }
+        }
       }
 
       const dLogs = logs.filter(l => dateFormatter.format(l.timestamp) === dateStr);
@@ -1550,7 +1564,7 @@ app.get('/api/honor/recap', async (req, res) => {
         }
       }
 
-      // CHECK HOLIDAY
+      // CHECK HOLIDAY / EVENT
       const dayHoliday = hList.find(h => {
         const hd = new Date(h.date.getTime() + 7 * 60 * 60 * 1000);
         const hStr = `${hd.getUTCFullYear()}-${(hd.getUTCMonth()+1).toString().padStart(2,'0')}-${hd.getUTCDate().toString().padStart(2,'0')}`;
@@ -1567,7 +1581,19 @@ app.get('/api/honor/recap', async (req, res) => {
             isAffected = true;
           }
         }
-        if (isAffected) tt = null;
+        if (isAffected) {
+          if (dayHoliday.type === 'TUGAS_LUAR') {
+            if (tt) {
+              tW++;
+              tH++;
+              dD++;
+            }
+            cdLoop.setDate(cdLoop.getDate() + 1);
+            continue;
+          } else {
+            tt = null;
+          }
+        }
       }
 
       if (tt) {
@@ -1868,15 +1894,16 @@ app.get('/api/holidays', async (req, res) => {
 });
 
 app.post('/api/holidays', async (req, res) => {
-  const { id, name, date, isGlobal, affectedRoles, affectedCategories, affectedPatterns } = req.body;
+  const { id, name, date, isGlobal, affectedRoles, affectedCategories, affectedPatterns, type } = req.body;
+  const hType = type || 'LIBUR';
   if (id) {
     await prisma.holiday.update({
       where: { id: Number(id) },
-      data: { name, date: new Date(date), isGlobal, affectedRoles, affectedCategories, affectedPatterns }
+      data: { name, date: new Date(date), isGlobal, affectedRoles, affectedCategories, affectedPatterns, type: hType }
     });
   } else {
     await prisma.holiday.create({
-      data: { name, date: new Date(date), isGlobal, affectedRoles, affectedCategories, affectedPatterns }
+      data: { name, date: new Date(date), isGlobal, affectedRoles, affectedCategories, affectedPatterns, type: hType }
     });
   }
   res.json({ success: true });

@@ -64,7 +64,8 @@ const SettingsPage = () => {
     date: format(new Date(), 'yyyy-MM-dd'),
     isGlobal: true,
     affectedRoles: '',
-    affectedPatterns: ''
+    affectedPatterns: '',
+    type: 'LIBUR'
   });
 
   useEffect(() => {
@@ -126,7 +127,7 @@ const SettingsPage = () => {
       await axios.post(`${API_URL}/holidays`, holidayForm);
       toast.success(holidayForm.id ? 'Hari libur diperbarui' : 'Hari libur ditambahkan');
       setIsHolidayModalOpen(false);
-      setHolidayForm({ id: '', name: '', date: format(new Date(), 'yyyy-MM-dd'), isGlobal: true, affectedRoles: '', affectedPatterns: '' });
+      setHolidayForm({ id: '', name: '', date: format(new Date(), 'yyyy-MM-dd'), isGlobal: true, affectedRoles: '', affectedPatterns: '', type: 'LIBUR' });
       const res = await axios.get(`${API_URL}/holidays`);
       setHolidays(res.data);
     } catch (err) {
@@ -495,7 +496,7 @@ const SettingsPage = () => {
           <div className="space-y-6">
              <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 md:mb-10 gap-6">
                 <div><h2 className="text-lg md:text-xl font-bold text-slate-800">Manajemen Hari Libur</h2><p className="text-xs md:text-sm text-slate-500">Atur hari libur nasional atau event khusus sekolah.</p></div>
-                <button onClick={() => { setHolidayForm({ id: '', name: '', date: format(new Date(), 'yyyy-MM-dd'), isGlobal: true, affectedRoles: '', affectedPatterns: '' }); setIsHolidayModalOpen(true); }} className="w-full md:w-auto px-6 py-3 bg-amber-500 text-white rounded-xl font-bold text-xs md:text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-100 hover:bg-amber-600 transition-all"><Plus size={18} /> Tambah Hari Libur</button>
+                <button onClick={() => { setHolidayForm({ id: '', name: '', date: format(new Date(), 'yyyy-MM-dd'), isGlobal: true, affectedRoles: '', affectedPatterns: '', type: 'LIBUR' }); setIsHolidayModalOpen(true); }} className="w-full md:w-auto px-6 py-3 bg-amber-500 text-white rounded-xl font-bold text-xs md:text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-100 hover:bg-amber-600 transition-all"><Plus size={18} /> Tambah Event / Hari Libur</button>
              </div>
              <div className="mansaba-card overflow-hidden !p-0">
                 <div className="overflow-x-auto no-scrollbar">
@@ -529,9 +530,14 @@ const SettingsPage = () => {
                                 <span className="text-xs font-black text-amber-600">{format(new Date(h.date), 'dd MMM yyyy')}</span>
                              </td>
                              <td className="px-8 py-4 text-center">
-                                <span className={`px-3 py-1 rounded-full text-[9px] font-black ${h.isGlobal ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
-                                   {h.isGlobal ? 'MASSAL' : 'KHUSUS'}
-                                </span>
+                                 <div className="flex flex-col items-center gap-1">
+                                    <span className={`px-3 py-1 rounded-full text-[9px] font-black ${h.isGlobal ? 'bg-slate-100 text-slate-700' : 'bg-blue-100 text-blue-700'}`}>
+                                       {h.isGlobal ? 'MASSAL' : 'KHUSUS'}
+                                    </span>
+                                    <span className={`px-2 py-0.5 rounded text-[8px] font-black tracking-wider uppercase ${h.type === 'TUGAS_LUAR' ? 'bg-emerald-500 text-white shadow-sm' : 'bg-amber-100 text-amber-800'}`}>
+                                       {h.type === 'TUGAS_LUAR' ? '🚌 DISPENSASI (TRANSPORT PENUH)' : '🏖️ LIBUR RESMI'}
+                                    </span>
+                                 </div>
                              </td>
                              <td className="px-8 py-4">
                                 {!h.isGlobal ? (
@@ -548,7 +554,7 @@ const SettingsPage = () => {
                              </td>
                              <td className="px-8 py-4 text-right">
                                 <div className="flex items-center justify-end gap-2">
-                                   <button onClick={() => { setHolidayForm({...h, date: format(new Date(h.date), 'yyyy-MM-dd')}); setIsHolidayModalOpen(true); }} className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white flex items-center justify-center transition-all">
+                                   <button onClick={() => { setHolidayForm({...h, date: format(new Date(h.date), 'yyyy-MM-dd'), type: h.type || 'LIBUR'}); setIsHolidayModalOpen(true); }} className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white flex items-center justify-center transition-all">
                                       <SettingsIcon size={14} />
                                    </button>
                                    <button onClick={() => handleDeleteHoliday(h.id)} className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white flex items-center justify-center transition-all">
@@ -572,11 +578,21 @@ const SettingsPage = () => {
            <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
               <div className="bg-amber-500 p-8 text-white relative"><div className="absolute top-0 right-0 p-8 opacity-20"><Calendar size={80} /></div><h2 className="text-2xl font-bold flex items-center gap-3"><Calendar size={28} /> {holidayForm.id ? 'Edit Hari Libur' : 'Tambah Hari Libur'}</h2></div>
               <form onSubmit={handleHolidaySubmit} className="p-8 space-y-6">
-                 <div className="space-y-2"><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Nama Hari Libur</label><input required className="mansaba-input w-full !py-4" value={holidayForm.name} onChange={e => setHolidayForm({...holidayForm, name: e.target.value})} /></div>
+                 <div className="space-y-2"><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Nama Event / Hari Libur</label><input required className="mansaba-input w-full !py-4" placeholder="Contoh: Jalan Sehat / Outbond / Hari Raya" value={holidayForm.name} onChange={e => setHolidayForm({...holidayForm, name: e.target.value})} /></div>
+                 
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Tipe Kategori Event</label>
+                    <select className="mansaba-input w-full !py-4 font-bold" value={holidayForm.type} onChange={e => setHolidayForm({...holidayForm, type: e.target.value})}>
+                       <option value="LIBUR">🏖️ HARI LIBUR RESMI (Bebas Finger, Tanpa Transport)</option>
+                       <option value="TUGAS_LUAR">🚌 KEGIATAN LUAR / DISPENSASI (Bebas Finger, Transport Penuh)</option>
+                    </select>
+                 </div>
+
                  <div className="grid grid-cols-2 gap-6">
                     <div className="space-y-2"><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Tanggal</label><input required type="date" className="mansaba-input w-full !py-4" value={holidayForm.date} onChange={e => setHolidayForm({...holidayForm, date: e.target.value})} /></div>
-                    <div className="space-y-2"><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Sifat Libur</label><select className="mansaba-input w-full !py-4" value={holidayForm.isGlobal ? 'true' : 'false'} onChange={e => setHolidayForm({...holidayForm, isGlobal: e.target.value === 'true'})}><option value="true">Libur Masal (Semua)</option><option value="false">Libur Khusus (Pilih Role)</option></select></div>
+                    <div className="space-y-2"><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Sasaran Pegawai</label><select className="mansaba-input w-full !py-4" value={holidayForm.isGlobal ? 'true' : 'false'} onChange={e => setHolidayForm({...holidayForm, isGlobal: e.target.value === 'true'})}><option value="true">Semua Pegawai (Massal)</option><option value="false">Khusus Role / Pola Shift tertentu</option></select></div>
                  </div>
+                 
                  {!holidayForm.isGlobal && (
                     <>
                        <div className="space-y-3 p-5 bg-blue-50 rounded-2xl border border-blue-100">

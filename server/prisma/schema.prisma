@@ -207,6 +207,7 @@ model holiday {
   affectedRoles      String?  // Comma separated roles
   affectedCategories String?  // Comma separated category IDs
   affectedPatterns   String?  // Comma separated Pattern IDs
+  type               String   @default("LIBUR") // "LIBUR" or "TUGAS_LUAR"
   createdAt          DateTime @default(now())
 
   @@index([date], map: "Holiday_date_idx")
