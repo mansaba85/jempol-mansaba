@@ -1068,6 +1068,7 @@ app.get('/api/reports/detailed', async (req, res) => {
       let iLog: any = null;
       let oLog: any = null;
       let ttp = 0;
+      let isDispensasiOut = false;
 
       if (tt) {
         tW++;
@@ -1103,6 +1104,7 @@ app.get('/api/reports/detailed', async (req, res) => {
           tH++;
           
           let isDisciplined = true;
+
           if (iLog && tt.jamMasuk) {
             const hStr = timeFormatter.format(iLog.timestamp);
             const [lh, lm] = hStr.split(':').map(Number);
@@ -1125,8 +1127,30 @@ app.get('/api/reports/detailed', async (req, res) => {
                 earlyM = diff;
                 isDisciplined = false;
              }
-          } else if (!oLog && iLog && pE > 5) {
-             isDisciplined = false; earlyM = pE;
+          } else if (!oLog && iLog) {
+             // Cek jika shift lintas hari (isO) & hari berikutnya adalah Hari Libur / Dispensasi untuk pegawai ini
+             const nextDateStr = dateFormatter.format(new Date(cd.getTime() + 86400000));
+             const nextHoliday = hList.find(h => dateFormatter.format(h.date) === nextDateStr);
+             let isNextHolidayAffected = false;
+             if (nextHoliday) {
+                if (nextHoliday.isGlobal) isNextHolidayAffected = true;
+                else {
+                   const roles = (nextHoliday.affectedRoles || '').split(',').map(s => s.trim().toUpperCase());
+                   const patterns = (nextHoliday.affectedPatterns || '').split(',').map(s => s.trim());
+                   const currentPatternId = String(emp.employeepattern[0]?.patternId || '');
+                   if (roles.includes(String(emp.role || '').toUpperCase()) || patterns.includes(currentPatternId)) {
+                      isNextHolidayAffected = true;
+                   }
+                }
+             }
+
+             if (isO && isNextHolidayAffected) {
+                earlyM = 0;
+                isDispensasiOut = true;
+             } else if (pE > 5) {
+                isDisciplined = false; 
+                earlyM = pE;
+             }
           }
 
           if (isDisciplined) {
@@ -1140,6 +1164,7 @@ app.get('/api/reports/detailed', async (req, res) => {
       days.push({
         date: dateStr,
         status,
+        isDispensasiOut,
         holidayName: activeHoliday ? activeHoliday.name : null,
         holidayType: activeHoliday ? (activeHoliday.type || 'LIBUR') : null,
         timetable: tt ? { name: tt.name, jamMasuk: tt.jamMasuk, jamPulang: tt.jamPulang } : null,
@@ -1159,13 +1184,23 @@ app.get('/api/reports/detailed', async (req, res) => {
       const dateObj = new Date(parse(d.date, 'yyyy-MM-dd', new Date()));
       const displayDate = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta' }).format(dateObj);
       
+      let scanKeluarStr = d.logs.out ? timeFormatter.format(new Date(d.logs.out)) : '-';
+      if (!d.logs.out && d.earlyMinutes === 0 && d.logs.in && d.status === 'HADIR') {
+         const isO = d.timetable && d.timetable.jamPulang < d.timetable.jamMasuk;
+         const nextDateStr = dateFormatter.format(new Date(dateObj.getTime() + 86400000));
+         const nextHoliday = hList.find(h => dateFormatter.format(h.date) === nextDateStr);
+         if (isO && nextHoliday) {
+            scanKeluarStr = `${d.timetable.jamPulang} (DISPENSASI)`;
+         }
+      }
+
       return {
         tanggal: displayDate,
         hari: dayNameFormatter.format(dateObj),
         jamMasuk: d.timetable?.jamMasuk || null,
         jamPulang: d.timetable?.jamPulang || null,
         scanMasuk: d.logs.in ? timeFormatter.format(new Date(d.logs.in)) : '-',
-        scanKeluar: d.logs.out ? timeFormatter.format(new Date(d.logs.out)) : '-',
+        scanKeluar: scanKeluarStr,
         terlambat: d.lateMinutes > 0 ? `${Math.floor(d.lateMinutes / 60)}j ${d.lateMinutes % 60}m` : null,
         plgCpt: d.earlyMinutes > 0 ? `${Math.floor(d.earlyMinutes / 60)}j ${d.earlyMinutes % 60}m` : null,
         lateMinutes: d.lateMinutes,
@@ -1678,9 +1713,31 @@ app.get('/api/honor/recap', async (req, res) => {
             }
           } else if (!oL && iL) {
              // Jika baru scan masuk tapi belum scan pulang:
-             // Anggap "Tidak Disiplin" (early = true) agar honor dasar (10rb) muncul.
-             // Nanti kalau sudah scan pulang dengan benar, otomatis jadi dD (Disiplin).
-             early = true;
+             let isNextHolidayDispensasi = false;
+             if (isO) {
+                const tomorrowHoliday = hList.find(h => {
+                  const hd = new Date(h.date.getTime() + 7 * 60 * 60 * 1000);
+                  const hStr = `${hd.getUTCFullYear()}-${(hd.getUTCMonth()+1).toString().padStart(2,'0')}-${hd.getUTCDate().toString().padStart(2,'0')}`;
+                  return hStr === outTargetDStr;
+                });
+                if (tomorrowHoliday) {
+                  if (tomorrowHoliday.isGlobal) isNextHolidayDispensasi = true;
+                  else {
+                    const roles = (tomorrowHoliday.affectedRoles || '').split(',').map(s => s.trim().toUpperCase());
+                    const patterns = (tomorrowHoliday.affectedPatterns || '').split(',').map(s => s.trim());
+                    const currentPatternId = String(emp.employeepattern[0]?.patternId || '');
+                    if (roles.includes(String(emp.role || '').toUpperCase()) || patterns.includes(currentPatternId)) {
+                      isNextHolidayDispensasi = true;
+                    }
+                  }
+                }
+             }
+
+             if (isNextHolidayDispensasi) {
+                early = false; // Auto dispensasi pulang
+             } else {
+                early = true;
+             }
           }
 
           if (!late && !early) dD++; else nD++;
