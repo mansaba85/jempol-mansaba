@@ -195,77 +195,179 @@ const HonorPage = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
+    const monthName = format(new Date(selectedYear, selectedMonth-1, 1), 'MMMM yyyy', {locale: id});
+
     const html = `
+      <!DOCTYPE html>
       <html>
       <head>
-        <title>Cetak Struk Honor - ${selectedMonth}/${selectedYear}</title>
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+        <title>Cetak Slip Honor - ${monthName}</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,500;1,700&display=swap" rel="stylesheet">
         <style>
-          @page { size: 215.9mm 330.2mm; margin: 10mm; }
-          body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; background: #fff; }
+          @page { size: 215.9mm 330.2mm; margin: 8mm; }
+          * { box-sizing: border-box; }
+          body { 
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            margin: 0; 
+            padding: 0; 
+            background: #fff; 
+            color: #0f172a;
+            -webkit-print-color-adjust: exact;
+          }
           .grid-container { 
             display: grid; 
             grid-template-columns: repeat(3, 1fr); 
-            gap: 5px;
-            row-gap: 15px; 
+            gap: 6mm;
+            row-gap: 8mm; 
           }
           .slip { 
             width: 65mm; 
             height: 48mm; 
-            border: 0.5px solid #ddd; 
-            padding: 8px;
+            border: 1px solid #cbd5e1; 
+            border-radius: 4px;
+            padding: 2.5mm 3mm;
             box-sizing: border-box;
-            font-size: 8px;
             position: relative;
             overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            background: #ffffff;
           }
-          .header { text-align: center; border-bottom: 1.5px solid #000; margin-bottom: 5px; padding-bottom: 2px; }
-          .header h1 { font-size: 9px; margin: 0; font-weight: 800; }
-          .header p { font-size: 7px; margin: 0; font-weight: 600; text-transform: uppercase; }
-          .emp-info { margin-bottom: 4px; }
-          .emp-name { font-size: 9px; font-weight: 800; margin: 0; text-transform: uppercase; }
-          .emp-sub { font-size: 7px; color: #444; }
-          .row { display: flex; justify-content: space-between; margin-bottom: 1px; }
-          .label { font-weight: 500; }
-          .val { text-align: right; font-weight: 600; }
-          .voucher { color: #d97706; font-style: italic; }
+          .header { 
+            text-align: center; 
+            border-bottom: 1.5px solid #0f172a; 
+            margin-bottom: 4px; 
+            padding-bottom: 3px; 
+          }
+          .header h1 { 
+            font-size: 8.5pt; 
+            line-height: 1.1;
+            margin: 0 0 1px 0; 
+            font-weight: 800; 
+            letter-spacing: 0.3px;
+            color: #0f172a;
+          }
+          .header p { 
+            font-size: 6.8pt; 
+            line-height: 1.1;
+            margin: 0; 
+            font-weight: 700; 
+            text-transform: uppercase; 
+            letter-spacing: 0.4px;
+            color: #475569;
+          }
+          .emp-info { 
+            margin-bottom: 4px; 
+          }
+          .emp-name { 
+            font-size: 8.8pt; 
+            line-height: 1.2;
+            font-weight: 700; 
+            margin: 0; 
+            text-transform: uppercase; 
+            letter-spacing: 0.2px;
+            color: #0f172a;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          .emp-sub { 
+            font-size: 6.8pt; 
+            font-weight: 600;
+            color: #64748b; 
+            margin: 1px 0 0 0;
+            letter-spacing: 0.2px;
+          }
+          .details-box {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+          }
+          .row { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: baseline;
+            margin-bottom: 2px; 
+            line-height: 1.2;
+          }
+          .label { 
+            font-size: 7.2pt; 
+            font-weight: 500; 
+            color: #334155;
+          }
+          .val { 
+            text-align: right; 
+            font-size: 7.8pt; 
+            font-weight: 700; 
+            color: #0f172a;
+            font-variant-numeric: tabular-nums;
+          }
+          .voucher .label { 
+            color: #d97706; 
+            font-weight: 600;
+          }
+          .voucher .val { 
+            color: #d97706; 
+            font-weight: 700;
+          }
           .total-box { 
-            border-top: 1px dashed #000; 
-            margin-top: 5px; 
+            border-top: 1.5px dashed #94a3b8; 
+            margin-top: 3px; 
             padding-top: 3px; 
             display: flex; 
-            justify-content: flex-end; 
+            justify-content: space-between; 
             align-items: center; 
-            gap: 5px;
           }
-          .total-label { font-weight: 800; font-size: 9px; }
-          .total-val { font-size: 10px; font-weight: 900; }
-          @media print { .slip { border: 0.5px solid #ccc; } }
+          .total-label { 
+            font-weight: 800; 
+            font-size: 8.2pt; 
+            color: #0f172a;
+            letter-spacing: 0.3px;
+          }
+          .total-val { 
+            font-size: 9.2pt; 
+            font-weight: 800; 
+            color: #0f172a;
+            font-variant-numeric: tabular-nums;
+          }
+          @media print { 
+            .slip { border: 1px solid #cbd5e1; } 
+          }
         </style>
       </head>
       <body>
           <div class="grid-container">
             ${filteredHonor.map(h => `
               <div class="slip">
-                 <div class="header">
-                    <h1>MA NU 01 BANYUPUTIH</h1>
-                    <p>SLIP HONOR - ${format(new Date(selectedYear, selectedMonth-1, 1), 'MMMM yyyy', {locale: id})}</p>
-                 </div>
-                 <div class="emp-info">
-                    <p class="emp-name">${h.employeeName}</p>
-                    <p class="emp-sub">ID: ${h.employeeId} | ${(h.category || (h.isSertifikasi ? 'SERTIF' : 'UMUM')).toUpperCase()}</p>
-                 </div>
-                 <div class="row">
-                    <span class="label">Disiplin: &nbsp;&nbsp; ${h.disciplinedDays} x ${h.rateBruto?.toLocaleString('id-ID') || 0}</span>
-                    <span class="val">${(h.disciplinedDays * (h.rateBruto || 0)).toLocaleString('id-ID')}</span>
-                 </div>
-                 <div class="row">
-                    <span class="label">Tdk Dis: &nbsp;&nbsp; ${h.nonDisciplinedDays} x ${h.rateLate?.toLocaleString('id-ID') || 0}</span>
-                    <span class="val">${(h.nonDisciplinedDays * (h.rateLate || 0)).toLocaleString('id-ID')}</span>
-                 </div>
-                 <div class="row voucher">
-                    <span class="label">Voucher: &nbsp; - Potongan -</span>
-                    <span class="val">(${h.voucherNominal.toLocaleString('id-ID')})</span>
+                 <div>
+                    <div class="header">
+                       <h1>MA NU 01 BANYUPUTIH</h1>
+                       <p>SLIP HONOR - ${monthName}</p>
+                    </div>
+                    <div class="emp-info">
+                       <div class="emp-name">${h.employeeName}</div>
+                       <div class="emp-sub">ID: ${h.employeeId} | ${(h.category || (h.isSertifikasi ? 'SERTIF' : 'UMUM')).toUpperCase()}</div>
+                    </div>
+                    <div class="details-box">
+                       <div class="row">
+                          <span class="label">Disiplin: &nbsp; ${h.disciplinedDays} x ${h.rateBruto?.toLocaleString('id-ID') || 0}</span>
+                          <span class="val">${(h.disciplinedDays * (h.rateBruto || 0)).toLocaleString('id-ID')}</span>
+                       </div>
+                       <div class="row">
+                          <span class="label">Tdk Dis: &nbsp; ${h.nonDisciplinedDays} x ${h.rateLate?.toLocaleString('id-ID') || 0}</span>
+                          <span class="val">${(h.nonDisciplinedDays * (h.rateLate || 0)).toLocaleString('id-ID')}</span>
+                       </div>
+                       ${h.voucherNominal > 0 ? `
+                       <div class="row voucher">
+                          <span class="label">Voucher: &nbsp; - Potongan -</span>
+                          <span class="val">(${h.voucherNominal.toLocaleString('id-ID')})</span>
+                       </div>
+                       ` : ''}
+                    </div>
                  </div>
                  <div class="total-box">
                     <span class="total-label">TOTAL:</span>
@@ -274,7 +376,13 @@ const HonorPage = () => {
               </div>
             `).join('')}
           </div>
-          <script>window.onload = function() { window.print(); };</script>
+          <script>
+            window.onload = function() {
+              setTimeout(function() {
+                window.print();
+              }, 300);
+            };
+          </script>
       </body>
       </html>
     `;
