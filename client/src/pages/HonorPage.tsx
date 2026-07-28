@@ -263,13 +263,14 @@ const HonorPage = () => {
             color: #475569;
           }
           .emp-info { 
-            margin-bottom: 4px; 
+            margin-top: 3px;
+            margin-bottom: 6px; 
           }
           .emp-name { 
             font-size: 8.8pt; 
             line-height: 1.2;
             font-weight: 700; 
-            margin: 0; 
+            margin: 0 0 2px 0; 
             text-transform: uppercase; 
             letter-spacing: 0.2px;
             color: #0f172a;
@@ -281,21 +282,22 @@ const HonorPage = () => {
             font-size: 6.8pt; 
             font-weight: 600;
             color: #64748b; 
-            margin: 1px 0 0 0;
+            margin: 0;
             letter-spacing: 0.2px;
           }
           .details-box {
-            flex: 1;
+            margin-top: 4px;
+            margin-bottom: 4px;
             display: flex;
             flex-direction: column;
-            justify-content: center;
+            gap: 3px;
           }
           .row { 
             display: flex; 
             justify-content: space-between; 
             align-items: baseline;
-            margin-bottom: 2px; 
-            line-height: 1.2;
+            margin-bottom: 0; 
+            line-height: 1.25;
           }
           .label { 
             font-size: 7.2pt; 
