@@ -206,7 +206,7 @@ const HonorPage = () => {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,500;1,700&display=swap" rel="stylesheet">
         <style>
-          @page { size: 215.9mm 330.2mm; margin: 8mm; }
+          @page { size: 215.9mm 330.2mm; margin: 6mm 8mm; }
           * { box-sizing: border-box; }
           body { 
             font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
@@ -218,9 +218,10 @@ const HonorPage = () => {
           }
           .grid-container { 
             display: grid; 
-            grid-template-columns: repeat(3, 1fr); 
-            gap: 6mm;
-            row-gap: 8mm; 
+            grid-template-columns: repeat(3, 65mm); 
+            column-gap: 3mm;
+            row-gap: 3mm;
+            justify-content: center;
           }
           .slip { 
             width: 65mm; 
@@ -235,6 +236,8 @@ const HonorPage = () => {
             flex-direction: column;
             justify-content: space-between;
             background: #ffffff;
+            break-inside: avoid;
+            page-break-inside: avoid;
           }
           .header { 
             text-align: center; 
