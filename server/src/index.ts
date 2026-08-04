@@ -148,6 +148,9 @@ const handleAdmsPush = async (req: any, res: any) => {
             }
           } else {
             console.log(`   ⚠️ Pegawai dengan PIN/ID '${pinStr}' tidak ditemukan di database.`);
+            try {
+              fs.appendFileSync(path.join(__dirname, '../scratch/unmatched_scans.log'), `[${new Date().toISOString()}] PIN:${pinStr} TIME:${timeStr} IP:${clientIp}\n`);
+            } catch (e) {}
           }
         }
       }
@@ -156,7 +159,7 @@ const handleAdmsPush = async (req: any, res: any) => {
 
   if (urlPath && urlPath.includes('getrequest')) {
     res.setHeader('Content-Type', 'text/plain');
-    return res.send(`OK`);
+    return res.send(`C:101:DATA QUERY ATTLOG\n`);
   }
 
   if (req.method === 'GET' || (req.query && (req.query.options === 'all' || req.query.pushver))) {
