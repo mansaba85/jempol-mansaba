@@ -439,8 +439,19 @@ app.get('/api/devices', async (req, res) => {
 });
 
 app.post('/api/devices', async (req, res) => {
-  const device = await prisma.device.create({ data: req.body });
-  res.json(device);
+  try {
+    const { name, ipAddress, port, password } = req.body;
+    const numericPort = parseInt(String(port)) || 4370;
+    const device = await prisma.device.upsert({
+      where: { ipAddress },
+      update: { name, port: numericPort, password: password || null, isActive: true },
+      create: { name, ipAddress, port: numericPort, password: password || null, isActive: true }
+    });
+    res.json(device);
+  } catch (error: any) {
+    console.error("[Create Device Error]", error);
+    res.status(500).json({ error: 'Gagal menambahkan mesin: ' + (error?.message || 'Error') });
+  }
 });
 
 app.delete('/api/devices/:id', async (req, res) => {

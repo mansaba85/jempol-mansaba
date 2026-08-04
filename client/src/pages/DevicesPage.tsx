@@ -59,7 +59,10 @@ const DevicesPage = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      await axios.post(`${API_URL}/devices`, newDevice);
+      await axios.post(`${API_URL}/devices`, {
+        ...newDevice,
+        port: parseInt(newDevice.port) || 4370
+      });
       setNewDevice({ name: '', ipAddress: '', port: '4370', password: '' });
       toast.success('Mesin berhasil ditambahkan');
       fetchDevices();
