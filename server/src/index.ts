@@ -128,9 +128,17 @@ const handleAdmsPush = async (req: any, res: any) => {
     }
   }
 
+  if (req.method === 'GET' || (req.query && (req.query.options === 'all' || req.query.pushver))) {
+    res.setHeader('Content-Type', 'text/plain');
+    return res.send(`GET OPTION FROM: ${sn}\nStamp=9999\nOpStamp=9999\nErrorDelay=30\nDelay=10\nTransTimes=00:00;14:00\nTransInterval=1\nTransFlag=1111111111\nRealtime=1\nEncrypt=0\n`);
+  }
+
   if (urlPath && urlPath.includes('getrequest')) {
+    res.setHeader('Content-Type', 'text/plain');
     return res.send('OK');
   }
+  
+  res.setHeader('Content-Type', 'text/plain');
   return res.send(count > 0 ? `OK: ${count}` : 'OK');
 };
 
