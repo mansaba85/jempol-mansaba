@@ -29,8 +29,19 @@ const handleAdmsPush = async (req: any, res: any) => {
   const sn = req.query.SN || req.query.sn || req.query.SerialNumber || 'UNKNOWN';
   const urlPath = req.path || req.url || '';
   
-  let rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
-  if (Buffer.isBuffer(req.body)) rawBody = (req.body as Buffer).toString('utf-8');
+  let rawBody = '';
+  if (typeof req.body === 'string') {
+    rawBody = req.body;
+  } else if (Buffer.isBuffer(req.body)) {
+    rawBody = (req.body as Buffer).toString('utf-8');
+  } else if (req.body && typeof req.body === 'object') {
+    const keys = Object.keys(req.body);
+    if (keys.length > 0) {
+      rawBody = keys.join('\n');
+    } else {
+      rawBody = JSON.stringify(req.body);
+    }
+  }
 
   const logHeader = `[${new Date().toISOString()}] IP: ${clientIp} | SN: ${sn} | Path: ${urlPath} | Query: ${JSON.stringify(req.query)}\nBody: ${rawBody}\n----------------------------------------\n`;
   
@@ -71,7 +82,8 @@ const handleAdmsPush = async (req: any, res: any) => {
   if (rawBody && rawBody.length > 0 && rawBody !== '{}') {
     const lines = rawBody.split(/\r?\n/).filter((l: string) => l.trim().length > 0);
     for (const line of lines) {
-      const parts = line.trim().split(/[\t,]+/);
+      const cleanLine = line.replace(/^["']|["']$/g, '').trim();
+      const parts = cleanLine.split(/[\t,]+/);
       if (parts.length >= 2) {
         const pinStr = parts[0].trim().replace(/[^\w-]/g, '');
         let timeStr = parts[1].trim();
@@ -80,7 +92,7 @@ const handleAdmsPush = async (req: any, res: any) => {
           timeStr = `${parts[1]} ${parts[2]}`;
         }
 
-        // Hanya proses jika PIN berupa angka (seperti 12064, 202210, dll) dan timeStr memiliki format tanggal
+        // Hanya proses jika PIN berupa angka (seperti 202202, 12064, dll) dan timeStr memiliki format tanggal
         const isNumericPin = /^\d+$/.test(pinStr);
         const hasValidDate = /\d{2,4}[-/.]\d{1,2}[-/.]\d{2,4}|\d{4}\d{2}\d{2}/.test(timeStr);
 
