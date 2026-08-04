@@ -704,16 +704,20 @@ app.get('/api/machine/status/:id', async (req, res) => {
   const device = await prisma.device.findUnique({ where: { id: parseInt(req.params.id) } });
   if (!device) return res.status(404).json({ error: 'Device not found' });
 
-  // 1. Cek apakah mesin beroperasi dalam Mode Push Server ADMS
-  const isPushActive = device.lastSync && (new Date().getTime() - new Date(device.lastSync).getTime() < 15 * 60 * 1000);
+  if (device.port === 3001) {
+    const userCount = await prisma.employee.count();
+    const logCount = await prisma.attendance.count({ where: { deviceId: device.id } });
+    return res.json({ status: 'Connected', info: { userCount, logCount, isPush: true } });
+  }
 
-  const zk = new ZKLib(device.ipAddress, device.port === 3001 ? 4370 : device.port, 5000, 4000);
+  const zk = new ZKLib(device.ipAddress, device.port, 5000, 4000);
   try {
     await zk.createSocket();
     const info = await zk.getInfo();
     await zk.disconnect();
     res.json({ status: 'Connected', info });
   } catch (error) {
+    const isPushActive = device.lastSync && (new Date().getTime() - new Date(device.lastSync).getTime() < 15 * 60 * 1000);
     if (isPushActive) {
       const userCount = await prisma.employee.count();
       const logCount = await prisma.attendance.count();
@@ -932,10 +936,14 @@ const runSyncAll = async (onProgress?: (step: string, percent: number, details?:
     const empMap = new Map(employees.map(e => [e.id, e]));
 
     for (const dev of activeDevices) {
+      if (dev.port === 3001) {
+        sendProgress(`${dev.name}: Mode Push Server Aktif (Terkirim Otomatis)`, ((activeDevices.indexOf(dev) + 1) / activeDevices.length) * 100);
+        continue;
+      }
       try {
         sendProgress(`${dev.name}: Menghubungkan...`, (activeDevices.indexOf(dev) / activeDevices.length) * 100);
         
-        const zk = new ZKLib(dev.ipAddress, dev.port, 30000, 10000);
+        const zk = new ZKLib(dev.ipAddress, dev.port, 10000, 4000);
         await zk.createSocket();
         
         const logs = await zk.getAttendances();
