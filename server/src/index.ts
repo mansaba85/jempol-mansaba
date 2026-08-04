@@ -21,6 +21,109 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.text({ limit: '50mb', type: ['text/*', 'application/octet-stream', 'plain/text', '*/*'] }));
+
+// --- ADMS / FINGERSPOT PUSH SERVER RECEIVER ---
+const handleAdmsPush = async (req: any, res: any) => {
+  const clientIp = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').replace('::ffff:', '');
+  const sn = req.query.SN || req.query.sn || 'UNKNOWN';
+  console.log(`\n==========================================`);
+  console.log(`📡 [ADMS PUSH RECEIVED] Method: ${req.method} | IP: ${clientIp} | SN: ${sn} | Path: ${req.path}`);
+  console.log(`   Query:`, req.query);
+  
+  let rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+  if (Buffer.isBuffer(req.body)) rawBody = (req.body as Buffer).toString('utf-8');
+  
+  if (rawBody && rawBody.length > 0 && rawBody !== '{}') {
+    console.log(`   Body Preview (${rawBody.length} bytes):\n`, rawBody.substring(0, 400));
+  }
+
+  // Update lastSync for device matching IP or SN
+  try {
+    await prisma.device.updateMany({
+      where: {
+        OR: [
+          { ipAddress: clientIp },
+          { ipAddress: { contains: '192.168.8.201' } }
+        ]
+      },
+      data: { lastSync: new Date() }
+    });
+  } catch (e) {}
+
+  // Parse attendance logs if table is ATTLOG or body contains log lines
+  const table = req.query.table || req.query.Table;
+  let count = 0;
+
+  if (rawBody && (table === 'ATTLOG' || rawBody.includes('\t') || rawBody.includes(':'))) {
+    const lines = rawBody.split(/\r?\n/).filter((l: string) => l.trim().length > 0);
+    for (const line of lines) {
+      const parts = line.trim().split(/[\t,]+/);
+      if (parts.length >= 2) {
+        const pinStr = parts[0].trim();
+        let timeStr = parts[1].trim();
+
+        if (!timeStr.includes(':') && parts[2] && parts[2].includes(':')) {
+          timeStr = `${parts[1]} ${parts[2]}`;
+        }
+
+        const numericId = parseInt(pinStr);
+        if (!isNaN(numericId) || pinStr) {
+          const emp = await prisma.employee.findFirst({
+            where: {
+              OR: [
+                { id: isNaN(numericId) ? -1 : numericId },
+                { pin: pinStr },
+                { fingerId: pinStr }
+              ]
+            }
+          });
+
+          if (emp) {
+            try {
+              const timestamp = new Date(timeStr.replace(' ', 'T') + '+07:00');
+              if (!isNaN(timestamp.getTime())) {
+                const statusState = parts[2] || '0';
+                const checkType = (statusState === '1' || statusState.toLowerCase() === 'out') ? 'CHECK OUT' : 'CHECK IN';
+
+                await prisma.attendance.upsert({
+                  where: { employeeId_timestamp: { employeeId: emp.id, timestamp } },
+                  update: { isManual: false, type: checkType },
+                  create: { employeeId: emp.id, timestamp, type: checkType, isManual: false }
+                });
+                count++;
+              }
+            } catch (err) {
+              console.error("[ADMS Line Error]", err);
+            }
+          }
+        }
+      }
+    }
+    console.log(`   ✅ Berhasil memproses ${count} log absensi via Push API.`);
+  }
+
+  if (req.path.includes('getrequest')) {
+    return res.send('OK');
+  }
+  return res.send(count > 0 ? `OK: ${count}` : 'OK');
+};
+
+const admsRoutes = [
+  '/iclock/cdata',
+  '/iclock/cdata.aspx',
+  '/iclock/getrequest',
+  '/iclock/devicecmd',
+  '/cdata',
+  '/cdata.aspx',
+  '/getrequest',
+  '/api/fingerspot/push'
+];
+
+admsRoutes.forEach(route => {
+  app.get(route, handleAdmsPush);
+  app.post(route, handleAdmsPush);
+});
 
 // --- AUTH & LOGIN ---
 app.post('/api/login', async (req, res) => {
