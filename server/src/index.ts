@@ -58,7 +58,8 @@ const handleAdmsPush = async (req: any, res: any) => {
       where: {
         OR: [
           { ipAddress: clientIp },
-          { ipAddress: { contains: '192.168.8.201' } }
+          { ipAddress: { contains: '192.168.8.201' } },
+          { name: { contains: 'guru' } }
         ]
       },
       data: { lastSync: new Date() }
