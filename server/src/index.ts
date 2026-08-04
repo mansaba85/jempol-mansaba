@@ -30,18 +30,21 @@ const handleAdmsPush = async (req: any, res: any) => {
   const urlPath = req.path || req.url || '';
   
   let rawBody = '';
-  if (typeof req.body === 'string') {
+  if ((req as any).rawBody && typeof (req as any).rawBody === 'string') {
+    rawBody = (req as any).rawBody;
+  } else if (typeof req.body === 'string') {
     rawBody = req.body;
   } else if (Buffer.isBuffer(req.body)) {
     rawBody = (req.body as Buffer).toString('utf-8');
   } else if (req.body && typeof req.body === 'object') {
     const keys = Object.keys(req.body);
-    if (keys.length > 0) {
-      rawBody = keys.join('\n');
-    } else {
-      rawBody = JSON.stringify(req.body);
-    }
+    const values = Object.values(req.body).filter(v => typeof v === 'string');
+    rawBody = [...keys, ...values, JSON.stringify(req.body)].join('\n');
   }
+
+  try {
+    fs.appendFileSync(path.join(__dirname, '../scratch/adms_incoming.log'), `[${new Date().toISOString()}] IP:${clientIp} URL:${urlPath} METHOD:${req.method}\nBODY:\n${rawBody}\n----------------------------------------\n`);
+  } catch (e) {}
 
   const logHeader = `[${new Date().toISOString()}] IP: ${clientIp} | SN: ${sn} | Path: ${urlPath} | Query: ${JSON.stringify(req.query)}\nBody: ${rawBody}\n----------------------------------------\n`;
   
