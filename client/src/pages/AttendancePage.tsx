@@ -14,12 +14,18 @@ const AttendancePage = () => {
   const [queryStart, setQueryStart] = useState('');
   const [queryEnd, setQueryEnd] = useState('');
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [selectedDevice, setSelectedDevice] = useState('all');
+  const [devices, setDevices] = useState<any[]>([]);
+
+  useEffect(() => {
+    axios.get('/api/devices').then(res => setDevices(res.data)).catch(() => {});
+  }, []);
 
   const fetchLogs = async () => {
     setLoading(true);
     try {
       const res = await axios.get('/api/logs', {
-        params: { search, startDate: queryStart, endDate: queryEnd }
+        params: { search, startDate: queryStart, endDate: queryEnd, deviceId: selectedDevice }
       });
       setLogs(res.data.logs || []);
     } catch (err) { 
@@ -31,7 +37,7 @@ const AttendancePage = () => {
 
   useEffect(() => {
     fetchLogs();
-  }, [queryStart, queryEnd]);
+  }, [queryStart, queryEnd, selectedDevice]);
 
   const handleFilter = (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,6 +126,21 @@ const AttendancePage = () => {
             </div>
           </div>
           
+          <div className="w-full lg:w-48">
+            <select 
+              className="mansaba-input w-full font-medium text-slate-700"
+              value={selectedDevice}
+              onChange={e => setSelectedDevice(e.target.value)}
+            >
+              <option value="all">Semua Perangkat</option>
+              {devices.map(d => (
+                <option key={d.id} value={d.id}>
+                  {d.name} (ID {d.id})
+                </option>
+              ))}
+            </select>
+          </div>
+
           <button type="submit" className="mansaba-btn-primary px-8 w-full lg:w-auto" disabled={loading}>
             <i className="fa-solid fa-filter mr-2"></i> Filter
           </button>

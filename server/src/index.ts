@@ -791,9 +791,10 @@ app.get('/api/machine/sync-one/:id', async (req, res) => {
 // --- ATTENDANCE & SYNC ---
 
 app.get('/api/logs', async (req, res) => {
-  const { search, startDate, endDate } = req.query;
+  const { search, startDate, endDate, deviceId } = req.query;
   let where: any = {};
   if (search) where.employee = { name: { contains: String(search) } };
+  if (deviceId && deviceId !== 'all') where.deviceId = parseInt(String(deviceId));
   if (startDate || endDate) {
     where.timestamp = {};
     if (startDate) where.timestamp.gte = new Date(String(startDate));
