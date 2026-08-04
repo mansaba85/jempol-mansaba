@@ -121,13 +121,24 @@ const handleAdmsPush = async (req: any, res: any) => {
                 const statusState = parts[2] || '0';
                 const checkType = (statusState === '1' || statusState.toLowerCase() === 'out') ? 'CHECK OUT' : 'CHECK IN';
 
+                const matchingDevice = await prisma.device.findFirst({
+                  where: {
+                    OR: [
+                      { ipAddress: clientIp },
+                      { ipAddress: { contains: '192.168.8.201' } },
+                      { name: { contains: 'guru' } }
+                    ]
+                  }
+                });
+                const pushDeviceId = matchingDevice ? matchingDevice.id : 8;
+
                 await prisma.attendance.upsert({
                   where: { employeeId_timestamp: { employeeId: emp.id, timestamp } },
-                  update: { isManual: false, type: checkType },
-                  create: { employeeId: emp.id, timestamp, type: checkType, isManual: false }
+                  update: { isManual: false, type: checkType, deviceId: pushDeviceId },
+                  create: { employeeId: emp.id, timestamp, type: checkType, isManual: false, deviceId: pushDeviceId }
                 });
                 count++;
-                console.log(`   ✅ [ADMS LOG SAVED] ${emp.name} (${emp.id}) -> ${timestamp.toLocaleString('id-ID')}`);
+                console.log(`   ✅ [ADMS LOG SAVED] ${emp.name} (${emp.id}) -> ${timestamp.toLocaleString('id-ID')} | DeviceID: ${pushDeviceId}`);
               }
             } catch (err) {
               console.error("   ❌ [ADMS Line Error]", err);
