@@ -26,16 +26,16 @@ app.use(express.text({ limit: '50mb', type: ['text/*', 'application/octet-stream
 // --- ADMS / FINGERSPOT PUSH SERVER RECEIVER ---
 const handleAdmsPush = async (req: any, res: any) => {
   const clientIp = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').replace('::ffff:', '');
-  const sn = req.query.SN || req.query.sn || 'UNKNOWN';
+  const sn = req.query.SN || req.query.sn || req.query.SerialNumber || 'UNKNOWN';
   console.log(`\n==========================================`);
-  console.log(`📡 [ADMS PUSH RECEIVED] Method: ${req.method} | IP: ${clientIp} | SN: ${sn} | Path: ${req.path}`);
+  console.log(`📡 [ADMS PUSH RECEIVED] Method: ${req.method} | IP: ${clientIp} | SN: ${sn} | Path: ${req.path || req.url}`);
   console.log(`   Query:`, req.query);
   
   let rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
   if (Buffer.isBuffer(req.body)) rawBody = (req.body as Buffer).toString('utf-8');
   
   if (rawBody && rawBody.length > 0 && rawBody !== '{}') {
-    console.log(`   Body Preview (${rawBody.length} bytes):\n`, rawBody.substring(0, 400));
+    console.log(`   Body Content (${rawBody.length} bytes):\n`, rawBody);
   }
 
   // Update lastSync for device matching IP or SN
@@ -51,16 +51,17 @@ const handleAdmsPush = async (req: any, res: any) => {
     });
   } catch (e) {}
 
-  // Parse attendance logs if table is ATTLOG or body contains log lines
+  // Parse attendance logs if body contains content or table is ATTLOG
   const table = req.query.table || req.query.Table;
   let count = 0;
 
-  if (rawBody && (table === 'ATTLOG' || rawBody.includes('\t') || rawBody.includes(':'))) {
+  if (rawBody && rawBody.length > 0) {
     const lines = rawBody.split(/\r?\n/).filter((l: string) => l.trim().length > 0);
     for (const line of lines) {
+      // Split by tab, comma, or spaces
       const parts = line.trim().split(/[\t,]+/);
       if (parts.length >= 2) {
-        const pinStr = parts[0].trim();
+        const pinStr = parts[0].trim().replace(/[^\w-]/g, '');
         let timeStr = parts[1].trim();
 
         if (!timeStr.includes(':') && parts[2] && parts[2].includes(':')) {
@@ -68,20 +69,27 @@ const handleAdmsPush = async (req: any, res: any) => {
         }
 
         const numericId = parseInt(pinStr);
+        const strippedId = parseInt(pinStr.replace(/^0+/, ''));
+
         if (!isNaN(numericId) || pinStr) {
           const emp = await prisma.employee.findFirst({
             where: {
               OR: [
                 { id: isNaN(numericId) ? -1 : numericId },
-                { pin: pinStr },
-                { fingerId: pinStr }
+                { id: isNaN(strippedId) ? -1 : strippedId },
+                { fingerId: pinStr },
+                { nip: pinStr },
+                { cardNo: pinStr }
               ]
             }
           });
 
           if (emp) {
             try {
-              const timestamp = new Date(timeStr.replace(' ', 'T') + '+07:00');
+              // Parse date (e.g. 2026-08-04 07:15:00)
+              const cleanTimeStr = timeStr.includes('T') ? timeStr : timeStr.replace(' ', 'T');
+              const timestamp = new Date(cleanTimeStr.includes('+') ? cleanTimeStr : `${cleanTimeStr}+07:00`);
+              
               if (!isNaN(timestamp.getTime())) {
                 const statusState = parts[2] || '0';
                 const checkType = (statusState === '1' || statusState.toLowerCase() === 'out') ? 'CHECK OUT' : 'CHECK IN';
@@ -92,22 +100,35 @@ const handleAdmsPush = async (req: any, res: any) => {
                   create: { employeeId: emp.id, timestamp, type: checkType, isManual: false }
                 });
                 count++;
+                console.log(`   ✅ Log Berhasil Disimpan: ${emp.name} (${emp.id}) -> ${timestamp.toLocaleString()}`);
               }
             } catch (err) {
-              console.error("[ADMS Line Error]", err);
+              console.error("   ❌ [ADMS Line Error]", err);
             }
+          } else {
+            console.log(`   ⚠️ Pegawai dengan PIN/ID '${pinStr}' tidak ditemukan di database.`);
           }
         }
       }
     }
-    console.log(`   ✅ Berhasil memproses ${count} log absensi via Push API.`);
   }
 
-  if (req.path.includes('getrequest')) {
+  if (req.path && req.path.includes('getrequest')) {
     return res.send('OK');
   }
   return res.send(count > 0 ? `OK: ${count}` : 'OK');
 };
+
+// Catch-all middleware for Push device requests
+app.use((req: any, res: any, next: any) => {
+  const clientIp = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').replace('::ffff:', '');
+  const url = req.originalUrl || req.url || '';
+  
+  if (clientIp.includes('192.168.8.201') || url.includes('iclock') || url.includes('cdata') || url.includes('push') || url.includes('SN=')) {
+    return handleAdmsPush(req, res);
+  }
+  next();
+});
 
 const admsRoutes = [
   '/iclock/cdata',
