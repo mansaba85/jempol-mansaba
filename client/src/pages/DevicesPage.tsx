@@ -28,7 +28,11 @@ const DevicesPage = () => {
         [id]: { step: 'Berhasil!', percent: 100 }
       }));
       
-      toast.success(`Berhasil sinkron ${res.data.count || 0} log baru`);
+      if (res.data.message) {
+        toast.success(res.data.message);
+      } else {
+        toast.success(`Berhasil sinkron ${res.data.count || 0} log baru`);
+      }
       
       setTimeout(() => {
         setSyncingDevices((prev: any) => {

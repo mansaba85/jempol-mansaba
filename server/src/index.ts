@@ -72,11 +72,14 @@ const handleAdmsPush = async (req: any, res: any) => {
           timeStr = `${parts[1]} ${parts[2]}`;
         }
 
-        const numericId = parseInt(pinStr);
-        const strippedId = parseInt(pinStr.replace(/^0+/, ''));
+        // Hanya proses jika PIN berupa angka (seperti 12064, 202210, dll) dan timeStr memiliki format tanggal
+        const isNumericPin = /^\d+$/.test(pinStr);
+        const hasValidDate = /\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4}/.test(timeStr);
 
-        if (!isNaN(numericId) || pinStr) {
-          // 1. Cari pegawai berdasarkan ID, FingerID, NIP, atau CardNo
+        if (isNumericPin && hasValidDate) {
+          const numericId = parseInt(pinStr);
+          const strippedId = parseInt(pinStr.replace(/^0+/, ''));
+
           let emp = await prisma.employee.findFirst({
             where: {
               OR: [
@@ -88,15 +91,6 @@ const handleAdmsPush = async (req: any, res: any) => {
               ]
             }
           });
-
-          // 2. Fallback: Cari pegawai pertama jika ID mesin diset angka kecil (misal 1, 2)
-          if (!emp) {
-            const allEmps = await prisma.employee.findMany({ take: 5 });
-            if (allEmps.length > 0) {
-              emp = allEmps[0];
-              console.log(`   💡 [Fallback Matching] PIN '${pinStr}' dipetakan ke pegawai ID: ${emp.id} (${emp.name})`);
-            }
-          }
 
           if (emp) {
             try {
@@ -113,7 +107,7 @@ const handleAdmsPush = async (req: any, res: any) => {
                   create: { employeeId: emp.id, timestamp, type: checkType, isManual: false }
                 });
                 count++;
-                console.log(`   ✅ Log Berhasil Disimpan: ${emp.name} (${emp.id}) -> ${timestamp.toLocaleString()}`);
+                console.log(`   ✅ [ADMS LOG SAVED] ${emp.name} (${emp.id}) -> ${timestamp.toLocaleString('id-ID')}`);
               }
             } catch (err) {
               console.error("   ❌ [ADMS Line Error]", err);
