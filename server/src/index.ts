@@ -169,9 +169,25 @@ const handleAdmsPush = async (req: any, res: any) => {
 app.use((req: any, res: any, next: any) => {
   const clientIp = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').replace('::ffff:', '');
   const url = req.originalUrl || req.url || '';
-  
-  if (clientIp.includes('192.168.8.201') || url.includes('iclock') || url.includes('cdata') || url.includes('push') || url.includes('SN=')) {
-    return handleAdmsPush(req, res);
+  const userAgent = req.headers['user-agent'] || '';
+
+  const isApiRoute = url.startsWith('/api/') && !url.startsWith('/api/fingerspot');
+  const isStaticFile = url.includes('.') && !url.includes('.aspx') && !url.includes('.dll');
+
+  if (!isApiRoute && !isStaticFile) {
+    if (
+      clientIp.includes('192.168.8.201') ||
+      url.includes('iclock') ||
+      url.includes('cdata') ||
+      url.includes('push') ||
+      url.includes('SN=') ||
+      url === '/' ||
+      url === '' ||
+      req.method === 'POST' ||
+      !userAgent.includes('Mozilla')
+    ) {
+      return handleAdmsPush(req, res);
+    }
   }
   next();
 });
