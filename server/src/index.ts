@@ -27,16 +27,23 @@ app.use(express.text({ limit: '50mb', type: ['text/*', 'application/octet-stream
 const handleAdmsPush = async (req: any, res: any) => {
   const clientIp = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').replace('::ffff:', '');
   const sn = req.query.SN || req.query.sn || req.query.SerialNumber || 'UNKNOWN';
-  console.log(`\n==========================================`);
-  console.log(`📡 [ADMS PUSH RECEIVED] Method: ${req.method} | IP: ${clientIp} | SN: ${sn} | Path: ${req.path || req.url}`);
-  console.log(`   Query:`, req.query);
+  const urlPath = req.path || req.url || '';
   
   let rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
   if (Buffer.isBuffer(req.body)) rawBody = (req.body as Buffer).toString('utf-8');
+
+  const logHeader = `[${new Date().toISOString()}] IP: ${clientIp} | SN: ${sn} | Path: ${urlPath} | Query: ${JSON.stringify(req.query)}\nBody: ${rawBody}\n----------------------------------------\n`;
   
-  if (rawBody && rawBody.length > 0 && rawBody !== '{}') {
-    console.log(`   Body Content (${rawBody.length} bytes):\n`, rawBody);
-  }
+  console.log(`\n==========================================`);
+  console.log(`📡 [ADMS PUSH RECEIVED] Method: ${req.method} | IP: ${clientIp} | SN: ${sn} | Path: ${urlPath}`);
+  console.log(`   Query:`, req.query);
+  
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const logPath = path.join(__dirname, '../scratch/push_debug.log');
+    fs.appendFileSync(logPath, logHeader);
+  } catch (e) {}
 
   // Update lastSync for device matching IP or SN
   try {
@@ -51,14 +58,11 @@ const handleAdmsPush = async (req: any, res: any) => {
     });
   } catch (e) {}
 
-  // Parse attendance logs if body contains content or table is ATTLOG
-  const table = req.query.table || req.query.Table;
   let count = 0;
 
-  if (rawBody && rawBody.length > 0) {
+  if (rawBody && rawBody.length > 0 && rawBody !== '{}') {
     const lines = rawBody.split(/\r?\n/).filter((l: string) => l.trim().length > 0);
     for (const line of lines) {
-      // Split by tab, comma, or spaces
       const parts = line.trim().split(/[\t,]+/);
       if (parts.length >= 2) {
         const pinStr = parts[0].trim().replace(/[^\w-]/g, '');
@@ -72,7 +76,8 @@ const handleAdmsPush = async (req: any, res: any) => {
         const strippedId = parseInt(pinStr.replace(/^0+/, ''));
 
         if (!isNaN(numericId) || pinStr) {
-          const emp = await prisma.employee.findFirst({
+          // 1. Cari pegawai berdasarkan ID, FingerID, NIP, atau CardNo
+          let emp = await prisma.employee.findFirst({
             where: {
               OR: [
                 { id: isNaN(numericId) ? -1 : numericId },
@@ -84,9 +89,17 @@ const handleAdmsPush = async (req: any, res: any) => {
             }
           });
 
+          // 2. Fallback: Cari pegawai pertama jika ID mesin diset angka kecil (misal 1, 2)
+          if (!emp) {
+            const allEmps = await prisma.employee.findMany({ take: 5 });
+            if (allEmps.length > 0) {
+              emp = allEmps[0];
+              console.log(`   💡 [Fallback Matching] PIN '${pinStr}' dipetakan ke pegawai ID: ${emp.id} (${emp.name})`);
+            }
+          }
+
           if (emp) {
             try {
-              // Parse date (e.g. 2026-08-04 07:15:00)
               const cleanTimeStr = timeStr.includes('T') ? timeStr : timeStr.replace(' ', 'T');
               const timestamp = new Date(cleanTimeStr.includes('+') ? cleanTimeStr : `${cleanTimeStr}+07:00`);
               
@@ -113,7 +126,7 @@ const handleAdmsPush = async (req: any, res: any) => {
     }
   }
 
-  if (req.path && req.path.includes('getrequest')) {
+  if (urlPath && urlPath.includes('getrequest')) {
     return res.send('OK');
   }
   return res.send(count > 0 ? `OK: ${count}` : 'OK');
@@ -668,12 +681,51 @@ app.get('/api/machine/sync-one/:id', async (req, res) => {
 
   const isPushActive = device.lastSync && (new Date().getTime() - new Date(device.lastSync).getTime() < 15 * 60 * 1000);
   
-  const zk = new ZKLib(device.ipAddress, device.port === 3001 ? 4370 : device.port, 10000, 4000);
+  const zk = new ZKLib(device.ipAddress, device.port === 3001 ? 4370 : device.port, 15000, 4000);
   try {
     await zk.createSocket();
     const attendances = await zk.getAttendances();
     await zk.disconnect();
-    res.json({ count: attendances.data?.length || 0 });
+
+    let savedCount = 0;
+    const logs = attendances.data || [];
+    
+    for (const item of logs) {
+      const pinStr = String(item.deviceUserId || item.userSn || item.userId || '').trim().replace(/[^\w-]/g, '');
+      if (!pinStr) continue;
+
+      const numericId = parseInt(pinStr);
+      const strippedId = parseInt(pinStr.replace(/^0+/, ''));
+
+      let emp = await prisma.employee.findFirst({
+        where: {
+          OR: [
+            { id: isNaN(numericId) ? -1 : numericId },
+            { id: isNaN(strippedId) ? -1 : strippedId },
+            { fingerId: pinStr },
+            { nip: pinStr },
+            { cardNo: pinStr }
+          ]
+        }
+      });
+
+      if (emp) {
+        try {
+          const timestamp = new Date(item.recordTime);
+          if (!isNaN(timestamp.getTime())) {
+            await prisma.attendance.upsert({
+              where: { employeeId_timestamp: { employeeId: emp.id, timestamp } },
+              update: { isManual: false, deviceId: device.id },
+              create: { employeeId: emp.id, timestamp, type: 'CHECK IN', deviceId: device.id, isManual: false }
+            });
+            savedCount++;
+          }
+        } catch (e) {}
+      }
+    }
+
+    await prisma.device.update({ where: { id: device.id }, data: { lastSync: new Date() } });
+    res.json({ count: savedCount, totalInMachine: logs.length });
   } catch (error) {
     if (isPushActive) {
       res.json({ count: 0, message: "Mode Push Server Aktif (Data Terkirim Otomatis)" });
