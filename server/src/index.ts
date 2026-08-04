@@ -36,12 +36,19 @@ const handleAdmsPush = async (req: any, res: any) => {
   
   console.log(`\n==========================================`);
   console.log(`📡 [ADMS PUSH RECEIVED] Method: ${req.method} | IP: ${clientIp} | SN: ${sn} | Path: ${urlPath}`);
-  console.log(`   Query:`, req.query);
+  if (req.query && Object.keys(req.query).length > 0) {
+    console.log(`   Query:`, req.query);
+  }
+  if (rawBody && rawBody.trim().length > 0 && rawBody !== '{}') {
+    console.log(`   Body:`, rawBody);
+  }
   
   try {
     const fs = require('fs');
     const path = require('path');
-    const logPath = path.join(__dirname, '../scratch/push_debug.log');
+    const scratchDir = path.resolve(process.cwd(), 'scratch');
+    if (!fs.existsSync(scratchDir)) fs.mkdirSync(scratchDir, { recursive: true });
+    const logPath = path.join(scratchDir, 'push_debug.log');
     fs.appendFileSync(logPath, logHeader);
   } catch (e) {}
 
@@ -74,7 +81,7 @@ const handleAdmsPush = async (req: any, res: any) => {
 
         // Hanya proses jika PIN berupa angka (seperti 12064, 202210, dll) dan timeStr memiliki format tanggal
         const isNumericPin = /^\d+$/.test(pinStr);
-        const hasValidDate = /\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4}/.test(timeStr);
+        const hasValidDate = /\d{2,4}[-/.]\d{1,2}[-/.]\d{2,4}|\d{4}\d{2}\d{2}/.test(timeStr);
 
         if (isNumericPin && hasValidDate) {
           const numericId = parseInt(pinStr);
