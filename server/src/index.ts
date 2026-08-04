@@ -709,7 +709,7 @@ app.get('/api/machine/status/:id', async (req, res) => {
 
   if (device.port === 3001) {
     const userCount = await prisma.employee.count();
-    const logCount = await prisma.attendance.count({ where: { deviceId: device.id } });
+    const logCount = await prisma.attendance.count();
     return res.json({ status: 'Connected', info: { userCount, logCount, isPush: true } });
   }
 
@@ -783,8 +783,9 @@ app.get('/api/machine/sync-one/:id', async (req, res) => {
     await prisma.device.update({ where: { id: device.id }, data: { lastSync: new Date() } });
     res.json({ count: savedCount, totalInMachine: logs.length });
   } catch (error) {
-    if (isPushActive) {
-      res.json({ count: 0, message: "Mode Push Server Aktif (Data Terkirim Otomatis)" });
+    if (isPushActive || device.port === 3001) {
+      const totalLogs = await prisma.attendance.count();
+      return res.json({ success: true, count: 0, totalInMachine: totalLogs, message: "Mode Push Server Aktif (Data Terkirim Otomatis)" });
     } else {
       res.status(500).json({ error: 'Koneksi Mesin Gagal' });
     }
