@@ -159,7 +159,7 @@ const handleAdmsPush = async (req: any, res: any) => {
 
   if (urlPath && urlPath.includes('getrequest')) {
     res.setHeader('Content-Type', 'text/plain');
-    return res.send(`C:101:DATA QUERY ATTLOG\n`);
+    return res.send(`OK`);
   }
 
   if (req.method === 'GET' || (req.query && (req.query.options === 'all' || req.query.pushver))) {
