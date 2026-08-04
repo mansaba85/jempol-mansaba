@@ -153,8 +153,7 @@ const handleAdmsPush = async (req: any, res: any) => {
 
   if (urlPath && urlPath.includes('getrequest')) {
     res.setHeader('Content-Type', 'text/plain');
-    console.log(`   🚀 [REMOTE COMMAND SENT] Sending CHECK & REBOOT command to device ${sn}...`);
-    return res.send(`C:101:CHECK\nC:102:REBOOT\n`);
+    return res.send(`OK`);
   }
 
   if (req.method === 'GET' || (req.query && (req.query.options === 'all' || req.query.pushver))) {
