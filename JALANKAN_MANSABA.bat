@@ -7,6 +7,10 @@ echo    MEMULAI APLIKASI ABSENSI MANSABA
 echo ==========================================
 echo.
 
+:: 0. Memastikan Service Database MySQL Aktif
+echo [0/3] Memeriksa Database MySQL...
+powershell -Command "if (-not (Get-Process mysqld -ErrorAction SilentlyContinue)) { Start-Process 'C:\laragon\bin\mysql\mysql-8.0.30-winx64\bin\mysqld.exe' -ArgumentList '--console' -WindowStyle Hidden }"
+
 :: 1. Menjalankan Server Backend
 echo [1/3] Menjalankan Server Backend (Port 3001)...
 start "MANSABA BACKEND" /min cmd /k "cd /d "%~dp0server" && npm run dev"
