@@ -620,14 +620,45 @@ app.get('/api/machine/status', async (req, res) => {
 app.get('/api/machine/status/:id', async (req, res) => {
   const device = await prisma.device.findUnique({ where: { id: parseInt(req.params.id) } });
   if (!device) return res.status(404).json({ error: 'Device not found' });
-  const zk = new ZKLib(device.ipAddress, device.port, 10000, 4000);
+
+  // 1. Cek apakah mesin beroperasi dalam Mode Push Server ADMS
+  const isPushActive = device.lastSync && (new Date().getTime() - new Date(device.lastSync).getTime() < 15 * 60 * 1000);
+
+  const zk = new ZKLib(device.ipAddress, device.port === 3001 ? 4370 : device.port, 5000, 4000);
   try {
     await zk.createSocket();
     const info = await zk.getInfo();
     await zk.disconnect();
     res.json({ status: 'Connected', info });
   } catch (error) {
-    res.json({ status: 'Error' });
+    if (isPushActive) {
+      const userCount = await prisma.employee.count();
+      const logCount = await prisma.attendance.count();
+      res.json({ status: 'Connected', info: { userCount, logCount, isPush: true } });
+    } else {
+      res.json({ status: 'Error' });
+    }
+  }
+});
+
+app.get('/api/machine/sync-one/:id', async (req, res) => {
+  const device = await prisma.device.findUnique({ where: { id: parseInt(req.params.id) } });
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+
+  const isPushActive = device.lastSync && (new Date().getTime() - new Date(device.lastSync).getTime() < 15 * 60 * 1000);
+  
+  const zk = new ZKLib(device.ipAddress, device.port === 3001 ? 4370 : device.port, 10000, 4000);
+  try {
+    await zk.createSocket();
+    const attendances = await zk.getAttendances();
+    await zk.disconnect();
+    res.json({ count: attendances.data?.length || 0 });
+  } catch (error) {
+    if (isPushActive) {
+      res.json({ count: 0, message: "Mode Push Server Aktif (Data Terkirim Otomatis)" });
+    } else {
+      res.status(500).json({ error: 'Koneksi Mesin Gagal' });
+    }
   }
 });
 
