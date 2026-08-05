@@ -83,6 +83,65 @@ const handleAdmsPush = async (req: any, res: any) => {
   let count = 0;
 
   if (rawBody && rawBody.length > 0 && rawBody !== '{}') {
+    // 1. Dukungan Format JSON (FKDataHS103 dari Fingerspot Revo)
+    try {
+      const jsonMatch = rawBody.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+      if (jsonMatch) {
+        const jsonPayload = JSON.parse(jsonMatch[0]);
+        const records = Array.isArray(jsonPayload) ? jsonPayload : [jsonPayload];
+        for (const item of records) {
+          const userIdStr = item.user_id || item.user_id_str || item.pin || item.enrollid;
+          const ioTimeStr = item.io_time || item.time || item.record_time;
+
+          if (userIdStr && ioTimeStr) {
+            const pinStr = String(userIdStr).trim();
+            let parsedDate: Date | null = null;
+            if (/^\d{14}$/.test(ioTimeStr)) {
+              const y = ioTimeStr.substring(0, 4);
+              const m = ioTimeStr.substring(4, 6);
+              const d = ioTimeStr.substring(6, 8);
+              const hh = ioTimeStr.substring(8, 10);
+              const mm = ioTimeStr.substring(10, 12);
+              const ss = ioTimeStr.substring(12, 14);
+              parsedDate = new Date(`${y}-${m}-${d}T${hh}:${mm}:${ss}+07:00`);
+            } else {
+              parsedDate = new Date(ioTimeStr);
+            }
+
+            if (parsedDate && !isNaN(parsedDate.getTime())) {
+              const numericId = parseInt(pinStr);
+              const strippedId = parseInt(pinStr.replace(/^0+/, ''));
+
+              let emp = await prisma.employee.findFirst({
+                where: {
+                  OR: [
+                    { id: isNaN(numericId) ? -1 : numericId },
+                    { id: isNaN(strippedId) ? -1 : strippedId },
+                    { fingerId: pinStr },
+                    { nip: pinStr },
+                    { cardNo: pinStr }
+                  ]
+                }
+              });
+
+              if (emp) {
+                await prisma.attendance.upsert({
+                  where: { employeeId_timestamp: { employeeId: emp.id, timestamp: parsedDate } },
+                  update: { isManual: false, deviceId: 8 },
+                  create: { employeeId: emp.id, timestamp: parsedDate, type: 'CHECK IN', isManual: false, deviceId: 8 }
+                });
+                count++;
+                console.log(`   ✅ [FINGERSPOT JSON LOG SAVED] ${emp.name} (${emp.id}) -> ${parsedDate.toLocaleString('id-ID')} | DeviceID: 8`);
+              } else {
+                console.log(`   ⚠️ [FINGERSPOT JSON] Pegawai ID '${pinStr}' tidak ditemukan.`);
+              }
+            }
+          }
+        }
+      }
+    } catch (jsonErr) {}
+
+    // 2. Format Teks Standar ATTLOG (Tab-separated)
     const lines = rawBody.split(/\r?\n/).filter((l: string) => l.trim().length > 0);
     for (const line of lines) {
       const cleanLine = line.replace(/^["']|["']$/g, '').trim();
@@ -95,7 +154,6 @@ const handleAdmsPush = async (req: any, res: any) => {
           timeStr = `${parts[1]} ${parts[2]}`;
         }
 
-        // Hanya proses jika PIN berupa angka (seperti 202202, 12064, dll) dan timeStr memiliki format tanggal
         const isNumericPin = /^\d+$/.test(pinStr);
         const hasValidDate = /\d{2,4}[-/.]\d{1,2}[-/.]\d{2,4}|\d{4}\d{2}\d{2}/.test(timeStr);
 
