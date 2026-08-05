@@ -237,8 +237,8 @@ const handleAdmsPush = async (req: any, res: any) => {
   }
   
   if (rawBody && (rawBody.includes('FKData') || rawBody.startsWith('{'))) {
-    res.setHeader('Content-Type', 'application/json');
-    return res.json({ result: true, status: 200, count });
+    res.setHeader('Content-Type', 'text/plain');
+    return res.send('OK');
   }
 
   res.setHeader('Content-Type', 'text/plain');
