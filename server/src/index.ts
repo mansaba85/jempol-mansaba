@@ -786,7 +786,7 @@ app.get('/api/machine/status/:id', async (req, res) => {
 
   if (device.port === 3001) {
     const userCount = await prisma.employee.count();
-    const logCount = await prisma.attendance.count();
+    const logCount = await prisma.attendance.count({ where: { deviceId: device.id } });
     return res.json({ status: 'Connected', info: { userCount, logCount, isPush: true } });
   }
 
@@ -797,10 +797,27 @@ app.get('/api/machine/status/:id', async (req, res) => {
     await zk.disconnect();
     res.json({ status: 'Connected', info });
   } catch (error) {
+    // Raw TCP Socket Fallback Ping
+    const isRawTcpAlive = await new Promise((resolve) => {
+      const net = require('net');
+      const socket = new net.Socket();
+      socket.setTimeout(2500);
+      socket.on('connect', () => { socket.destroy(); resolve(true); });
+      socket.on('error', () => { socket.destroy(); resolve(false); });
+      socket.on('timeout', () => { socket.destroy(); resolve(false); });
+      socket.connect(device.port, device.ipAddress);
+    });
+
+    if (isRawTcpAlive) {
+      const userCount = await prisma.employee.count();
+      const logCount = await prisma.attendance.count({ where: { deviceId: device.id } });
+      return res.json({ status: 'Connected', info: { userCount, logCount, isTcpConnected: true } });
+    }
+
     const isPushActive = device.lastSync && (new Date().getTime() - new Date(device.lastSync).getTime() < 15 * 60 * 1000);
     if (isPushActive) {
       const userCount = await prisma.employee.count();
-      const logCount = await prisma.attendance.count();
+      const logCount = await prisma.attendance.count({ where: { deviceId: device.id } });
       res.json({ status: 'Connected', info: { userCount, logCount, isPush: true } });
     } else {
       res.json({ status: 'Error' });
