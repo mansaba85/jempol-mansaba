@@ -141,22 +141,33 @@ const handleAdmsPush = async (req: any, res: any) => {
                 });
                 const pushDeviceId = matchingDevice ? matchingDevice.id : 9;
 
-                let finalTimestamp = parsedDate;
-                const existingLog = await prisma.attendance.findUnique({
-                  where: { employeeId_timestamp: { employeeId: emp.id, timestamp: parsedDate } }
+                // Debounce check: Prevent duplicate log entries for the same employee within 60 seconds
+                const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+                const recentLog = await prisma.attendance.findFirst({
+                  where: {
+                    employeeId: emp.id,
+                    timestamp: { gte: oneMinuteAgo }
+                  }
                 });
 
-                if (existingLog) {
-                  finalTimestamp = new Date();
+                if (!recentLog) {
+                  let finalTimestamp = parsedDate;
+                  const existingLog = await prisma.attendance.findUnique({
+                    where: { employeeId_timestamp: { employeeId: emp.id, timestamp: parsedDate } }
+                  });
+
+                  if (existingLog) {
+                    finalTimestamp = new Date();
+                  }
+
+                  await prisma.attendance.upsert({
+                    where: { employeeId_timestamp: { employeeId: emp.id, timestamp: finalTimestamp } },
+                    update: { isManual: false, deviceId: pushDeviceId },
+                    create: { employeeId: emp.id, timestamp: finalTimestamp, type: 'CHECK IN', isManual: false, deviceId: pushDeviceId }
+                  });
+                  count++;
+                  console.log(`   ✅ [FINGERSPOT JSON LOG SAVED] ${emp.name} (${emp.id}) -> ${finalTimestamp.toLocaleString('id-ID')} | DeviceID: ${pushDeviceId}`);
                 }
-
-                await prisma.attendance.upsert({
-                  where: { employeeId_timestamp: { employeeId: emp.id, timestamp: finalTimestamp } },
-                  update: { isManual: false, deviceId: pushDeviceId },
-                  create: { employeeId: emp.id, timestamp: finalTimestamp, type: 'CHECK IN', isManual: false, deviceId: pushDeviceId }
-                });
-                count++;
-                console.log(`   ✅ [FINGERSPOT JSON LOG SAVED] ${emp.name} (${emp.id}) -> ${finalTimestamp.toLocaleString('id-ID')} | DeviceID: ${pushDeviceId}`);
               } else {
                 console.log(`   ⚠️ [FINGERSPOT JSON] Pegawai ID '${pinStr}' tidak ditemukan.`);
               }
