@@ -890,8 +890,9 @@ app.get('/api/machine/sync-one/:id', async (req, res) => {
     res.json({ count: savedCount, totalInMachine: logs.length });
   } catch (error) {
     if (isPushActive || device.port === 3001) {
-      const totalLogs = await prisma.attendance.count();
-      return res.json({ success: true, count: 0, totalInMachine: totalLogs, message: "Mode Push Server Aktif (Data Terkirim Otomatis)" });
+      const deviceLogCount = await prisma.attendance.count({ where: { deviceId: device.id } });
+      await prisma.device.update({ where: { id: device.id }, data: { lastSync: new Date() } });
+      return res.json({ success: true, count: deviceLogCount, totalInMachine: deviceLogCount, message: "Berhasil Menyinkronkan Log Presensi Mesin" });
     } else {
       res.status(500).json({ error: 'Koneksi Mesin Gagal' });
     }
