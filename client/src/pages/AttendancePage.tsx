@@ -8,7 +8,7 @@ const AttendancePage = () => {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [startDate, setStartDate] = useState('');
-  const [endDate, setStartDateInput] = useState('');
+  const [endDate, setEndDate] = useState('');
   
   // Real dates for backend
   const [queryStart, setQueryStart] = useState('');
@@ -73,6 +73,29 @@ const AttendancePage = () => {
     }
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const loadingToast = toast.loading("Mengimpor file log presensi...");
+    try {
+      const res = await axios.post('/api/attendance/import-file', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      toast.dismiss(loadingToast);
+      toast.success(res.data.message || "Berhasil mengimpor log presensi!");
+      fetchLogs();
+    } catch (err: any) {
+      toast.dismiss(loadingToast);
+      toast.error(err.response?.data?.error || "Gagal mengimpor file log");
+    } finally {
+      e.target.value = '';
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Toaster />
@@ -82,15 +105,28 @@ const AttendancePage = () => {
            <p className="text-sm text-slate-500 mt-1">Daftar riwayat scan kehadiran seluruh pegawai secara real-time.</p>
         </div>
         
-        {selectedIds.length > 0 && (
-          <button 
-            onClick={handleBulkDelete}
-            className="flex items-center gap-2 px-6 py-2.5 bg-rose-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-rose-100 hover:bg-rose-700 transition-all"
-          >
-            <i className="fa-solid fa-trash-can"></i>
-            Hapus {selectedIds.length} Terpilih
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-lg shadow-emerald-100 transition-all cursor-pointer">
+            <i className="fa-solid fa-file-import"></i>
+            <span>Import Log (USB/DAT/TXT)</span>
+            <input 
+              type="file" 
+              className="hidden" 
+              accept=".dat,.txt,.csv,.log" 
+              onChange={handleFileUpload} 
+            />
+          </label>
+
+          {selectedIds.length > 0 && (
+            <button 
+              onClick={handleBulkDelete}
+              className="flex items-center gap-2 px-6 py-2.5 bg-rose-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-rose-100 hover:bg-rose-700 transition-all"
+            >
+              <i className="fa-solid fa-trash-can"></i>
+              Hapus {selectedIds.length} Terpilih
+            </button>
+          )}
+        </div>
       </header>
 
       <div className="mansaba-card p-4 md:p-6">

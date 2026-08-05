@@ -20,14 +20,49 @@ const JWT_SECRET = process.env.JWT_SECRET || 'mansaba_super_secret_1985';
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
-app.use(express.text({ limit: '50mb', type: ['text/*', 'application/octet-stream', 'plain/text', '*/*'] }));
+app.use((req, res, next) => {
+  const ct = req.headers['content-type'] || '';
+  if (ct.includes('multipart/form-data')) {
+    return next();
+  }
+  express.text({ limit: '50mb', type: ['text/*', 'application/octet-stream', 'plain/text', '*/*'] })(req, res, next);
+});
+
+// Pending commands queue for ADMS Push devices
+const pendingPushCmds = new Map<string, string>();
+
+// Helper function to extract JSON from binary-wrapped payload (FK Web Protocol)
+function extractJsonFromPayload(str: string): any {
+  const start = str.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0, inString = false, escaped = false;
+  for (let i = start; i < str.length; i++) {
+    const ch = str[i];
+    if (escaped) { escaped = false; continue; }
+    if (inString) {
+      if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        try { return JSON.parse(str.substring(start, i + 1)); } catch { return null; }
+      }
+    }
+  }
+  return null;
+}
 
 // --- ADMS / FINGERSPOT PUSH SERVER RECEIVER ---
 const handleAdmsPush = async (req: any, res: any) => {
   const clientIp = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').replace('::ffff:', '');
-  const sn = req.query.SN || req.query.sn || req.query.SerialNumber || 'UNKNOWN';
+  const sn = req.headers['dev_id'] || req.headers['sn'] || req.query.SN || req.query.sn || req.query.SerialNumber || 'UNKNOWN';
   const urlPath = req.path || req.url || '';
+  const requestCode = req.headers['request_code'] || req.headers['cmd_id'] || '';
+  const transId = req.headers['trans_id'] || null;
   
   let rawBody = '';
   if ((req as any).rawBody && typeof (req as any).rawBody === 'string') {
@@ -43,64 +78,53 @@ const handleAdmsPush = async (req: any, res: any) => {
   }
 
   try {
-    fs.appendFileSync(path.join(__dirname, '../scratch/adms_incoming.log'), `[${new Date().toISOString()}] IP:${clientIp} URL:${urlPath} METHOD:${req.method}\nBODY:\n${rawBody}\n----------------------------------------\n`);
+    fs.appendFileSync(path.join(__dirname, '../scratch/adms_incoming.log'), `[${new Date().toISOString()}] IP:${clientIp} URL:${urlPath} METHOD:${req.method} REQ_CODE:${requestCode} TRANS:${transId}\nBODY:\n${rawBody.substring(0, 500)}\n----------------------------------------\n`);
   } catch (e) {}
 
-  const logHeader = `[${new Date().toISOString()}] IP: ${clientIp} | SN: ${sn} | Path: ${urlPath} | Query: ${JSON.stringify(req.query)}\nBody: ${rawBody}\n----------------------------------------\n`;
-  
   console.log(`\n==========================================`);
-  console.log(`📡 [ADMS PUSH RECEIVED] Method: ${req.method} | IP: ${clientIp} | SN: ${sn} | Path: ${urlPath}`);
-  if (req.query && Object.keys(req.query).length > 0) {
-    console.log(`   Query:`, req.query);
-  }
-  if (rawBody && rawBody.trim().length > 0 && rawBody !== '{}') {
-    console.log(`   Body:`, rawBody);
-  }
+  console.log(`📡 [ADMS PUSH RECEIVED] Method: ${req.method} | IP: ${clientIp} | SN: ${sn} | ReqCode: ${requestCode || '-'}`);
   
-  try {
-    const fs = require('fs');
-    const path = require('path');
-    const scratchDir = path.resolve(process.cwd(), 'scratch');
-    if (!fs.existsSync(scratchDir)) fs.mkdirSync(scratchDir, { recursive: true });
-    const logPath = path.join(scratchDir, 'push_debug.log');
-    fs.appendFileSync(logPath, logHeader);
-  } catch (e) {}
-
-  // Update lastSync for device matching IP or SN
+  // Update lastSync for matching device
   try {
     await prisma.device.updateMany({
       where: {
         OR: [
           { ipAddress: clientIp },
           { ipAddress: { contains: '192.168.8.201' } },
-          { name: { contains: 'guru' } }
+          { port: 3001 }
         ]
       },
       data: { lastSync: new Date() }
     });
   } catch (e) {}
 
+  // Check if there is a pending command for this device/IP
+  let pendingCmd: string | null = null;
+  if (pendingPushCmds.has(clientIp) || pendingPushCmds.has('192.168.8.201')) {
+    pendingCmd = pendingPushCmds.get(clientIp) || pendingPushCmds.get('192.168.8.201') || null;
+    pendingPushCmds.delete(clientIp);
+    pendingPushCmds.delete('192.168.8.201');
+    console.log(`   🚀 [ADMS PENDING CMD SENT TO MACHINE]: ${pendingCmd}`);
+  }
+
   let count = 0;
+  let isFkProtocol = Boolean(requestCode || rawBody.includes('FKData') || rawBody.includes('user_id') || rawBody.includes('fk_bin'));
 
-  let lastUserId: string | null = null;
-  let lastIoTime: string | null = null;
-
-  if (rawBody && rawBody.length > 0 && rawBody !== '{}') {
-    // 1. Dukungan Format JSON (FKDataHS103 dari Fingerspot Revo)
+  if (rawBody && rawBody.trim().length > 0 && rawBody !== '{}') {
+    // 1. Dukungan Format JSON (FKDataHS103 / Realtime GLog / FK Web Protocol)
     try {
-      const jsonMatch = rawBody.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
-      if (jsonMatch) {
-        const jsonPayload = JSON.parse(jsonMatch[0]);
+      const jsonPayload = extractJsonFromPayload(rawBody) || extractJsonFromPayload(rawBody.replace(/^[^{\[]+/, ''));
+      if (jsonPayload) {
         const records = Array.isArray(jsonPayload) ? jsonPayload : [jsonPayload];
+        
         for (const item of records) {
           const userIdStr = item.user_id || item.user_id_str || item.pin || item.enrollid;
           const ioTimeStr = item.io_time || item.time || item.record_time;
 
           if (userIdStr && ioTimeStr) {
-            lastUserId = String(userIdStr).trim();
-            lastIoTime = String(ioTimeStr).trim();
             const pinStr = String(userIdStr).trim();
             let parsedDate: Date | null = null;
+
             if (/^\d{14}$/.test(ioTimeStr)) {
               const y = ioTimeStr.substring(0, 4);
               const m = ioTimeStr.substring(4, 6);
@@ -110,7 +134,8 @@ const handleAdmsPush = async (req: any, res: any) => {
               const ss = ioTimeStr.substring(12, 14);
               parsedDate = new Date(`${y}-${m}-${d}T${hh}:${mm}:${ss}+07:00`);
             } else {
-              parsedDate = new Date(ioTimeStr);
+              const cleanTimeStr = ioTimeStr.includes('T') ? ioTimeStr : ioTimeStr.replace(' ', 'T');
+              parsedDate = new Date(cleanTimeStr.includes('+') ? cleanTimeStr : `${cleanTimeStr}+07:00`);
             }
 
             if (parsedDate && !isNaN(parsedDate.getTime())) {
@@ -139,15 +164,19 @@ const handleAdmsPush = async (req: any, res: any) => {
                     ]
                   }
                 });
-                const pushDeviceId = matchingDevice ? matchingDevice.id : 9;
+                const pushDeviceId = matchingDevice ? matchingDevice.id : 10;
+                
+                // Determine Check-in vs Check-out based on local hour
+                const localHour = (parsedDate.getUTCHours() + 7) % 24;
+                const checkType = localHour < 12 ? 'CHECK IN' : 'CHECK OUT';
 
                 await prisma.attendance.upsert({
                   where: { employeeId_timestamp: { employeeId: emp.id, timestamp: parsedDate } },
-                  update: { isManual: false, deviceId: pushDeviceId },
-                  create: { employeeId: emp.id, timestamp: parsedDate, type: 'CHECK IN', isManual: false, deviceId: pushDeviceId }
+                  update: { isManual: false, deviceId: pushDeviceId, type: checkType },
+                  create: { employeeId: emp.id, timestamp: parsedDate, type: checkType, isManual: false, deviceId: pushDeviceId }
                 });
                 count++;
-                console.log(`   ✅ [FINGERSPOT JSON LOG SAVED] ${emp.name} (${emp.id}) -> ${parsedDate.toLocaleString('id-ID')} | DeviceID: ${pushDeviceId}`);
+                console.log(`   ✅ [FINGERSPOT JSON LOG SAVED] ${emp.name} (${emp.id}) -> ${parsedDate.toLocaleString('id-ID')} | Type: ${checkType} | DeviceID: ${pushDeviceId}`);
               } else {
                 console.log(`   ⚠️ [FINGERSPOT JSON] Pegawai ID '${pinStr}' tidak ditemukan.`);
               }
@@ -203,11 +232,11 @@ const handleAdmsPush = async (req: any, res: any) => {
                     OR: [
                       { ipAddress: clientIp },
                       { ipAddress: { contains: '192.168.8.201' } },
-                      { name: { contains: 'guru' } }
+                      { port: 3001 }
                     ]
                   }
                 });
-                const pushDeviceId = matchingDevice ? matchingDevice.id : 8;
+                const pushDeviceId = matchingDevice ? matchingDevice.id : 10;
 
                 await prisma.attendance.upsert({
                   where: { employeeId_timestamp: { employeeId: emp.id, timestamp } },
@@ -220,37 +249,36 @@ const handleAdmsPush = async (req: any, res: any) => {
             } catch (err) {
               console.error("   ❌ [ADMS Line Error]", err);
             }
-          } else {
-            console.log(`   ⚠️ Pegawai dengan PIN/ID '${pinStr}' tidak ditemukan di database.`);
-            try {
-              fs.appendFileSync(path.join(__dirname, '../scratch/unmatched_scans.log'), `[${new Date().toISOString()}] PIN:${pinStr} TIME:${timeStr} IP:${clientIp}\n`);
-            } catch (e) {}
           }
         }
       }
     }
   }
 
+  // 3. Respon untuk FK Web Protocol / Fingerspot Revo (Header response_code: OK, Empty Body)
+  if (isFkProtocol || req.method === 'POST') {
+    const ackHeaders: any = {
+      'Content-Type': 'application/octet-stream',
+      'response_code': 'OK',
+      'Connection': 'close',
+      'Content-Length': '0'
+    };
+    if (transId) ackHeaders['trans_id'] = transId;
+    if (pendingCmd) ackHeaders['cmd_code'] = pendingCmd;
+
+    res.writeHead(200, ackHeaders);
+    return res.end();
+  }
+
+  // 4. Respon untuk ADMS / ICLOCK getrequest / pushver handshake
   if (urlPath && urlPath.includes('getrequest')) {
     res.setHeader('Content-Type', 'text/plain');
-    return res.send(`C:101:DATA QUERY ATTLOG\n`);
+    return res.send(pendingCmd ? `${pendingCmd}\n` : `C:101:DATA QUERY ATTLOG\n`);
   }
 
   if (req.method === 'GET' || (req.query && (req.query.options === 'all' || req.query.pushver))) {
     res.setHeader('Content-Type', 'text/plain');
     return res.send(`GET OPTION FROM: ${sn}\nStamp=9999\nOpStamp=9999\nErrorDelay=30\nDelay=10\nTransTimes=00:00;14:00\nTransInterval=1\nTransFlag=1111111111\nRealtime=1\nEncrypt=0\n`);
-  }
-  
-  if (rawBody && (rawBody.includes('FKData') || rawBody.startsWith('{'))) {
-    res.setHeader('Content-Type', 'application/json');
-    return res.json({
-      result: true,
-      ret: "OK",
-      status: 200,
-      code: 0,
-      user_id: lastUserId || undefined,
-      io_time: lastIoTime || undefined
-    });
   }
 
   res.setHeader('Content-Type', 'text/plain');
@@ -837,67 +865,7 @@ app.get('/api/machine/status/:id', async (req, res) => {
   }
 });
 
-app.get('/api/machine/sync-one/:id', async (req, res) => {
-  const device = await prisma.device.findUnique({ where: { id: parseInt(req.params.id) } });
-  if (!device) return res.status(404).json({ error: 'Device not found' });
 
-  const isPushActive = device.lastSync && (new Date().getTime() - new Date(device.lastSync).getTime() < 15 * 60 * 1000);
-  
-  const zk = new ZKLib(device.ipAddress, device.port === 3001 ? 4370 : device.port, 15000, 4000);
-  try {
-    await zk.createSocket();
-    const attendances = await zk.getAttendances();
-    await zk.disconnect();
-
-    let savedCount = 0;
-    const logs = attendances.data || [];
-    
-    for (const item of logs) {
-      const pinStr = String(item.deviceUserId || item.userSn || item.userId || '').trim().replace(/[^\w-]/g, '');
-      if (!pinStr) continue;
-
-      const numericId = parseInt(pinStr);
-      const strippedId = parseInt(pinStr.replace(/^0+/, ''));
-
-      let emp = await prisma.employee.findFirst({
-        where: {
-          OR: [
-            { id: isNaN(numericId) ? -1 : numericId },
-            { id: isNaN(strippedId) ? -1 : strippedId },
-            { fingerId: pinStr },
-            { nip: pinStr },
-            { cardNo: pinStr }
-          ]
-        }
-      });
-
-      if (emp) {
-        try {
-          const timestamp = new Date(item.recordTime);
-          if (!isNaN(timestamp.getTime())) {
-            await prisma.attendance.upsert({
-              where: { employeeId_timestamp: { employeeId: emp.id, timestamp } },
-              update: { isManual: false, deviceId: device.id },
-              create: { employeeId: emp.id, timestamp, type: 'CHECK IN', deviceId: device.id, isManual: false }
-            });
-            savedCount++;
-          }
-        } catch (e) {}
-      }
-    }
-
-    await prisma.device.update({ where: { id: device.id }, data: { lastSync: new Date() } });
-    res.json({ count: savedCount, totalInMachine: logs.length });
-  } catch (error) {
-    if (isPushActive || device.port === 3001) {
-      const deviceLogCount = await prisma.attendance.count({ where: { deviceId: device.id } });
-      await prisma.device.update({ where: { id: device.id }, data: { lastSync: new Date() } });
-      return res.json({ success: true, count: deviceLogCount, totalInMachine: deviceLogCount, message: "Berhasil Menyinkronkan Log Presensi Mesin" });
-    } else {
-      res.status(500).json({ error: 'Koneksi Mesin Gagal' });
-    }
-  }
-});
 
 // --- ATTENDANCE & SYNC ---
 
@@ -919,9 +887,88 @@ app.get('/api/logs', async (req, res) => {
     };
   }
   const logs = await prisma.attendance.findMany({
-    where, include: { employee: true }, orderBy: { timestamp: 'desc' }, take: 1000
+        where, include: { employee: true }, orderBy: { timestamp: 'desc' }, take: 1000
   });
   res.json({ logs });
+});
+
+app.post('/api/attendance/import-file', upload.single('file'), async (req: any, res: any) => {
+  if (!req.file) return res.status(400).json({ error: 'File tidak ditemukan' });
+
+  try {
+    const filePath = req.file.path;
+    const content = fs.readFileSync(filePath, 'utf-8');
+    fs.unlinkSync(filePath); // Bersihkan file temporary
+
+    const lines = content.split(/\r?\n/).filter((l: string) => l.trim().length > 0);
+    let savedCount = 0;
+
+    const employees = await prisma.employee.findMany();
+    const empMap = new Map();
+    for (const e of employees) {
+      empMap.set(String(e.id), e);
+      if (e.fingerId) empMap.set(String(e.fingerId).trim(), e);
+      if (e.nip) empMap.set(String(e.nip).trim(), e);
+      if (e.cardNo) empMap.set(String(e.cardNo).trim(), e);
+    }
+
+    const defaultDevice = await prisma.device.findFirst({
+      where: {
+        OR: [
+          { port: 3001 },
+          { ipAddress: { contains: '192.168.8.201' } },
+          { isActive: true }
+        ]
+      }
+    });
+    const deviceId = defaultDevice ? defaultDevice.id : 10;
+
+    for (const line of lines) {
+      const cleanLine = line.replace(/^["']|["']$/g, '').trim();
+      const parts = cleanLine.split(/[\t,; ]+/).filter((p: string) => p.length > 0);
+      if (parts.length < 2) continue;
+
+      const pinStr = parts[0].trim().replace(/[^\w-]/g, '');
+      let timeStr = parts[1].trim();
+
+      if (!timeStr.includes(':') && parts[2] && parts[2].includes(':')) {
+        timeStr = `${parts[1]} ${parts[2]}`;
+      }
+
+      if (!/\d{2,4}[-/.]\d{1,2}[-/.]\d{2,4}|\d{4}\d{2}\d{2}/.test(timeStr)) continue;
+
+      const strippedPin = pinStr.replace(/^0+/, '');
+      const emp = empMap.get(pinStr) || empMap.get(strippedPin);
+
+      if (emp) {
+        try {
+          const cleanTimeStr = timeStr.includes('T') ? timeStr : timeStr.replace(' ', 'T');
+          const timestamp = new Date(cleanTimeStr.includes('+') ? cleanTimeStr : `${cleanTimeStr}+07:00`);
+
+          if (!isNaN(timestamp.getTime())) {
+            const localHour = (timestamp.getUTCHours() + 7) % 24;
+            const checkType = localHour < 12 ? 'CHECK IN' : 'CHECK OUT';
+
+            await prisma.attendance.upsert({
+              where: { employeeId_timestamp: { employeeId: emp.id, timestamp } },
+              update: { isManual: false, type: checkType, deviceId },
+              create: { employeeId: emp.id, timestamp, type: checkType, isManual: false, deviceId }
+            });
+            savedCount++;
+          }
+        } catch (err) {}
+      }
+    }
+
+    res.json({
+      success: true,
+      count: savedCount,
+      message: `Berhasil mengimpor ${savedCount} log presensi dari file!`
+    });
+  } catch (error: any) {
+    console.error("Import Log Error:", error);
+    res.status(500).json({ error: error.message || 'Gagal memproses file' });
+  }
 });
 
 app.post('/api/attendance/manual', async (req, res) => {
@@ -1184,6 +1231,26 @@ app.get('/api/machine/sync-one/:id', async (req, res) => {
     if (!dev) {
         if (isSSE) { sendProgress('Perangkat tidak ditemukan', 100); res.end(); }
         else return res.status(404).json({ error: 'Perangkat tidak ditemukan' });
+        return;
+    }
+
+    // Jika Mesin Menggunakan Mode ADMS Push Server (Port 3001)
+    if (dev.port === 3001 || dev.ipAddress.includes('192.168.8.201')) {
+        sendProgress(`${dev.name}: Mengirim perintah GET_LOG_DATA ke mesin Fingerspot Push Server...`, 50);
+        pendingPushCmds.set(dev.ipAddress, 'GET_LOG_DATA');
+        pendingPushCmds.set('192.168.8.201', 'GET_LOG_DATA');
+        await prisma.device.update({ where: { id: dev.id }, data: { lastSync: new Date() } });
+        
+        const deviceLogCount = await prisma.attendance.count({ where: { deviceId: dev.id } });
+        sendProgress(`Mode Push Server Aktif (${deviceLogCount} log tersimpan)`, 100);
+        
+        if (isSSE) res.end();
+        else res.json({ 
+          success: true, 
+          count: deviceLogCount, 
+          totalInMachine: deviceLogCount, 
+          message: `Berhasil mengirim perintah tarik log ke mesin ${dev.name} (Push Mode Port 3001). Log akan masuk otomatis.` 
+        });
         return;
     }
 
