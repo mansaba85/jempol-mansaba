@@ -289,26 +289,26 @@ const handleAdmsPush = async (req: any, res: any) => {
 app.use((req: any, res: any, next: any) => {
   const clientIp = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').replace('::ffff:', '');
   const url = req.originalUrl || req.url || '';
-  const userAgent = req.headers['user-agent'] || '';
+  const requestCode = req.headers['request_code'] || req.headers['cmd_id'];
+  const devId = req.headers['dev_id'];
+  const isMachineQuery = req.query && (req.query.SN || req.query.sn || req.query.pushver || req.query.options);
 
-  const isApiRoute = url.startsWith('/api/') && !url.startsWith('/api/fingerspot');
-  const isStaticFile = url.includes('.') && !url.includes('.aspx') && !url.includes('.dll');
+  const isAdmsPath = url.includes('/iclock') || 
+                     url.includes('/cdata') || 
+                     url.includes('/getrequest') || 
+                     url.includes('/devicecmd') || 
+                     url.startsWith('/api/fingerspot');
 
-  if (!isApiRoute && !isStaticFile) {
-    if (
-      clientIp.includes('192.168.8.201') ||
-      url.includes('iclock') ||
-      url.includes('cdata') ||
-      url.includes('push') ||
-      url.includes('SN=') ||
-      url === '/' ||
-      url === '' ||
-      req.method === 'POST' ||
-      !userAgent.includes('Mozilla')
-    ) {
-      return handleAdmsPush(req, res);
-    }
+  const isMachineDevice = requestCode || 
+                          devId || 
+                          isMachineQuery || 
+                          isAdmsPath || 
+                          (req.method === 'POST' && (clientIp.includes('192.168.8.201') || req.headers['content-type']?.includes('octet-stream')));
+
+  if (isMachineDevice) {
+    return handleAdmsPush(req, res);
   }
+
   next();
 });
 
