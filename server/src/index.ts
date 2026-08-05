@@ -141,13 +141,22 @@ const handleAdmsPush = async (req: any, res: any) => {
                 });
                 const pushDeviceId = matchingDevice ? matchingDevice.id : 9;
 
+                let finalTimestamp = parsedDate;
+                const existingLog = await prisma.attendance.findUnique({
+                  where: { employeeId_timestamp: { employeeId: emp.id, timestamp: parsedDate } }
+                });
+
+                if (existingLog) {
+                  finalTimestamp = new Date();
+                }
+
                 await prisma.attendance.upsert({
-                  where: { employeeId_timestamp: { employeeId: emp.id, timestamp: parsedDate } },
+                  where: { employeeId_timestamp: { employeeId: emp.id, timestamp: finalTimestamp } },
                   update: { isManual: false, deviceId: pushDeviceId },
-                  create: { employeeId: emp.id, timestamp: parsedDate, type: 'CHECK IN', isManual: false, deviceId: pushDeviceId }
+                  create: { employeeId: emp.id, timestamp: finalTimestamp, type: 'CHECK IN', isManual: false, deviceId: pushDeviceId }
                 });
                 count++;
-                console.log(`   ✅ [FINGERSPOT JSON LOG SAVED] ${emp.name} (${emp.id}) -> ${parsedDate.toLocaleString('id-ID')} | DeviceID: ${pushDeviceId}`);
+                console.log(`   ✅ [FINGERSPOT JSON LOG SAVED] ${emp.name} (${emp.id}) -> ${finalTimestamp.toLocaleString('id-ID')} | DeviceID: ${pushDeviceId}`);
               } else {
                 console.log(`   ⚠️ [FINGERSPOT JSON] Pegawai ID '${pinStr}' tidak ditemukan.`);
               }
