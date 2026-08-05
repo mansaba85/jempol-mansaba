@@ -125,13 +125,24 @@ const handleAdmsPush = async (req: any, res: any) => {
               });
 
               if (emp) {
+                const matchingDevice = await prisma.device.findFirst({
+                  where: {
+                    OR: [
+                      { ipAddress: clientIp },
+                      { ipAddress: { contains: '192.168.8.201' } },
+                      { port: 3001 }
+                    ]
+                  }
+                });
+                const pushDeviceId = matchingDevice ? matchingDevice.id : 9;
+
                 await prisma.attendance.upsert({
                   where: { employeeId_timestamp: { employeeId: emp.id, timestamp: parsedDate } },
-                  update: { isManual: false, deviceId: 8 },
-                  create: { employeeId: emp.id, timestamp: parsedDate, type: 'CHECK IN', isManual: false, deviceId: 8 }
+                  update: { isManual: false, deviceId: pushDeviceId },
+                  create: { employeeId: emp.id, timestamp: parsedDate, type: 'CHECK IN', isManual: false, deviceId: pushDeviceId }
                 });
                 count++;
-                console.log(`   ✅ [FINGERSPOT JSON LOG SAVED] ${emp.name} (${emp.id}) -> ${parsedDate.toLocaleString('id-ID')} | DeviceID: 8`);
+                console.log(`   ✅ [FINGERSPOT JSON LOG SAVED] ${emp.name} (${emp.id}) -> ${parsedDate.toLocaleString('id-ID')} | DeviceID: ${pushDeviceId}`);
               } else {
                 console.log(`   ⚠️ [FINGERSPOT JSON] Pegawai ID '${pinStr}' tidak ditemukan.`);
               }
