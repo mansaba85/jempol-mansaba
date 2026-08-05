@@ -91,7 +91,10 @@ const handleAdmsPush = async (req: any, res: any) => {
         OR: [
           { ipAddress: clientIp },
           { ipAddress: { contains: '192.168.8.201' } },
-          { port: 3001 }
+          { port: 3001 },
+          { port: 8085 },
+          { name: { contains: 'FINGERSPOT' } },
+          { name: { contains: 'REVO' } }
         ]
       },
       data: { lastSync: new Date() }
@@ -160,11 +163,15 @@ const handleAdmsPush = async (req: any, res: any) => {
                     OR: [
                       { ipAddress: clientIp },
                       { ipAddress: { contains: '192.168.8.201' } },
-                      { port: 3001 }
+                      { port: 3001 },
+                      { port: 8085 },
+                      { name: { contains: 'FINGERSPOT' } },
+                      { name: { contains: 'REVO' } }
                     ]
                   }
                 });
-                const pushDeviceId = matchingDevice ? matchingDevice.id : 10;
+                const defaultActiveDevice = await prisma.device.findFirst({ where: { isActive: true } });
+                const pushDeviceId = matchingDevice ? matchingDevice.id : (defaultActiveDevice ? defaultActiveDevice.id : 1);
                 
                 // Determine Check-in vs Check-out based on local hour
                 const localHour = (parsedDate.getUTCHours() + 7) % 24;
@@ -232,11 +239,15 @@ const handleAdmsPush = async (req: any, res: any) => {
                     OR: [
                       { ipAddress: clientIp },
                       { ipAddress: { contains: '192.168.8.201' } },
-                      { port: 3001 }
+                      { port: 3001 },
+                      { port: 8085 },
+                      { name: { contains: 'FINGERSPOT' } },
+                      { name: { contains: 'REVO' } }
                     ]
                   }
                 });
-                const pushDeviceId = matchingDevice ? matchingDevice.id : 10;
+                const defaultActiveDevice = await prisma.device.findFirst({ where: { isActive: true } });
+                const pushDeviceId = matchingDevice ? matchingDevice.id : (defaultActiveDevice ? defaultActiveDevice.id : 1);
 
                 await prisma.attendance.upsert({
                   where: { employeeId_timestamp: { employeeId: emp.id, timestamp } },
@@ -916,12 +927,15 @@ app.post('/api/attendance/import-file', upload.single('file'), async (req: any, 
       where: {
         OR: [
           { port: 3001 },
+          { port: 8085 },
           { ipAddress: { contains: '192.168.8.201' } },
+          { name: { contains: 'FINGERSPOT' } },
+          { name: { contains: 'REVO' } },
           { isActive: true }
         ]
       }
     });
-    const deviceId = defaultDevice ? defaultDevice.id : 10;
+    const deviceId = defaultDevice ? defaultDevice.id : (await prisma.device.findFirst())?.id || 1;
 
     for (const line of lines) {
       const cleanLine = line.replace(/^["']|["']$/g, '').trim();
@@ -1234,8 +1248,8 @@ app.get('/api/machine/sync-one/:id', async (req, res) => {
         return;
     }
 
-    // Jika Mesin Menggunakan Mode ADMS Push Server (Port 3001)
-    if (dev.port === 3001 || dev.ipAddress.includes('192.168.8.201')) {
+    // Jika Mesin Menggunakan Mode ADMS Push Server
+    if (dev.port === 3001 || dev.port === 8085 || dev.ipAddress.includes('192.168.8.201') || dev.name.toUpperCase().includes('FINGERSPOT') || dev.name.toUpperCase().includes('PUSH') || dev.name.toUpperCase().includes('REVO')) {
         sendProgress(`${dev.name}: Mengirim perintah GET_LOG_DATA ke mesin Fingerspot Push Server...`, 50);
         pendingPushCmds.set(dev.ipAddress, 'GET_LOG_DATA');
         pendingPushCmds.set('192.168.8.201', 'GET_LOG_DATA');
@@ -1249,7 +1263,7 @@ app.get('/api/machine/sync-one/:id', async (req, res) => {
           success: true, 
           count: deviceLogCount, 
           totalInMachine: deviceLogCount, 
-          message: `Berhasil mengirim perintah tarik log ke mesin ${dev.name} (Push Mode Port 3001). Log akan masuk otomatis.` 
+          message: `Berhasil mengirim perintah tarik log ke mesin ${dev.name} (Push Mode). Log akan masuk otomatis.` 
         });
         return;
     }
