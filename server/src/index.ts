@@ -228,7 +228,7 @@ const handleAdmsPush = async (req: any, res: any) => {
 
   if (urlPath && urlPath.includes('getrequest')) {
     res.setHeader('Content-Type', 'text/plain');
-    return res.send(`OK`);
+    return res.send(`C:101:DATA QUERY ATTLOG\n`);
   }
 
   if (req.method === 'GET' || (req.query && (req.query.options === 'all' || req.query.pushver))) {
@@ -236,6 +236,11 @@ const handleAdmsPush = async (req: any, res: any) => {
     return res.send(`GET OPTION FROM: ${sn}\nStamp=9999\nOpStamp=9999\nErrorDelay=30\nDelay=10\nTransTimes=00:00;14:00\nTransInterval=1\nTransFlag=1111111111\nRealtime=1\nEncrypt=0\n`);
   }
   
+  if (rawBody && (rawBody.includes('FKData') || rawBody.startsWith('{'))) {
+    res.setHeader('Content-Type', 'application/json');
+    return res.json({ result: true, status: 200, count });
+  }
+
   res.setHeader('Content-Type', 'text/plain');
   return res.send(count > 0 ? `OK: ${count}` : 'OK');
 };
