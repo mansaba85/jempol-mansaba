@@ -82,6 +82,9 @@ const handleAdmsPush = async (req: any, res: any) => {
 
   let count = 0;
 
+  let lastUserId: string | null = null;
+  let lastIoTime: string | null = null;
+
   if (rawBody && rawBody.length > 0 && rawBody !== '{}') {
     // 1. Dukungan Format JSON (FKDataHS103 dari Fingerspot Revo)
     try {
@@ -94,6 +97,8 @@ const handleAdmsPush = async (req: any, res: any) => {
           const ioTimeStr = item.io_time || item.time || item.record_time;
 
           if (userIdStr && ioTimeStr) {
+            lastUserId = String(userIdStr).trim();
+            lastIoTime = String(ioTimeStr).trim();
             const pinStr = String(userIdStr).trim();
             let parsedDate: Date | null = null;
             if (/^\d{14}$/.test(ioTimeStr)) {
@@ -237,8 +242,15 @@ const handleAdmsPush = async (req: any, res: any) => {
   }
   
   if (rawBody && (rawBody.includes('FKData') || rawBody.startsWith('{'))) {
-    res.setHeader('Content-Type', 'text/plain');
-    return res.send('OK');
+    res.setHeader('Content-Type', 'application/json');
+    return res.json({
+      result: true,
+      ret: "OK",
+      status: 200,
+      code: 0,
+      user_id: lastUserId || undefined,
+      io_time: lastIoTime || undefined
+    });
   }
 
   res.setHeader('Content-Type', 'text/plain');
