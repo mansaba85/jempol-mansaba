@@ -287,7 +287,9 @@ const EmployeeDashboard = () => {
         <div className="relative z-10 flex flex-col items-center">
           <div className="text-center">
              <p className="text-white/80 text-[11px] font-bold">Selamat Datang,</p>
-             <h1 className="text-2xl font-black text-white mt-0.5 tracking-tight">{user?.username || 'Pegawai'}</h1>
+             <h1 className="text-2xl font-black text-white mt-0.5 tracking-tight">
+               {user?.username || data?.employee?.name || 'Pegawai'}{user?.id || data?.employee?.id ? ` (${user?.id || data?.employee?.id})` : ''}
+             </h1>
           </div>
           
           <div className="mt-4 flex flex-col items-center">

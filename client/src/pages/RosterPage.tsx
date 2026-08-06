@@ -10,10 +10,16 @@ const RosterPage = () => {
   const [timetables, setTimetables] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
+  const [patternMode, setPatternMode] = useState<'REGULER' | 'SPECIAL' | 'ALL'>('REGULER');
   const [selectedPattern, setSelectedPattern] = useState<any>(null);
   const [patternItems, setPatternItems] = useState<any>({});
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   
+  const [regularTabLabel, setRegularTabLabel] = useState(() => localStorage.getItem('mansaba_regular_tab_label') || 'Reguler');
+  const [specialTabLabel, setSpecialTabLabel] = useState(() => localStorage.getItem('mansaba_special_tab_label') || 'Khusus / Ramadhan');
+  const [renameTabType, setRenameTabType] = useState<'REGULER' | 'SPECIAL' | null>(null);
+  const [customTabInput, setCustomTabInput] = useState('');
+
   const [searchQuery, setSearchQuery] = useState('');
   const [activeWeekTab, setActiveWeekTab] = useState<number>(0); // 0 = Semua, 1 = Minggu 1, 2 = Minggu 2, etc.
   
@@ -25,11 +31,66 @@ const RosterPage = () => {
   const [formData, setFormData] = useState({
     id: null,
     name: '',
+    patternType: 'REGULER',
     startDate: format(new Date(), 'yyyy-MM-dd'),
     periode: '1',
     unitPeriode: 'Minggu',
     category: 'Guru'
   });
+
+  const handleOpenRenameModal = (type: 'REGULER' | 'SPECIAL') => {
+    setRenameTabType(type);
+    setCustomTabInput(type === 'REGULER' ? regularTabLabel : specialTabLabel);
+  };
+
+  const handleSaveTabName = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!customTabInput.trim()) return;
+
+    if (renameTabType === 'REGULER') {
+      setRegularTabLabel(customTabInput.trim());
+      localStorage.setItem('mansaba_regular_tab_label', customTabInput.trim());
+      toast.success("Nama tab reguler diperbarui");
+    } else if (renameTabType === 'SPECIAL') {
+      setSpecialTabLabel(customTabInput.trim());
+      localStorage.setItem('mansaba_special_tab_label', customTabInput.trim());
+      toast.success("Nama tab khusus diperbarui");
+    }
+    setRenameTabType(null);
+  };
+
+  const handleResetTabName = () => {
+    if (renameTabType === 'REGULER') {
+      setRegularTabLabel('Reguler');
+      localStorage.removeItem('mansaba_regular_tab_label');
+      toast.success("Nama tab dikembalikan ke default");
+    } else if (renameTabType === 'SPECIAL') {
+      setSpecialTabLabel('Khusus / Ramadhan');
+      localStorage.removeItem('mansaba_special_tab_label');
+      toast.success("Nama tab dikembalikan ke default");
+    }
+    setRenameTabType(null);
+  };
+
+  const isSpecialPattern = (p: any) => {
+    const cat = (p.category || '').toLowerCase();
+    const name = (p.name || '').toLowerCase();
+    return cat.includes('ramadhan') || cat.includes('khusus') || cat.includes('insidental') || cat.includes('puasa') ||
+           name.includes('ramadhan') || name.includes('khusus') || name.includes('insidental') || name.includes('puasa');
+  };
+
+  const isSpecialTimetable = (t: any) => {
+    const catName = (t.category?.name || t.categoryName || '').toLowerCase();
+    const name = (t.name || '').toLowerCase();
+    return catName.includes('ramadhan') || catName.includes('khusus') || catName.includes('insidental') || catName.includes('puasa') ||
+           name.includes('ramadhan') || name.includes('khusus') || name.includes('insidental') || name.includes('puasa');
+  };
+
+  const regularPatterns = useMemo(() => patterns.filter(p => !isSpecialPattern(p)), [patterns]);
+  const specialPatterns = useMemo(() => patterns.filter(p => isSpecialPattern(p)), [patterns]);
+
+  const regularTimetables = useMemo(() => timetables.filter(t => !isSpecialTimetable(t)), [timetables]);
+  const specialTimetables = useMemo(() => timetables.filter(t => isSpecialTimetable(t)), [timetables]);
 
   useEffect(() => {
     fetchData();
@@ -83,17 +144,32 @@ const RosterPage = () => {
     }
   };
 
+  const handleOpenAdd = (type: 'REGULER' | 'SPECIAL' = 'REGULER') => {
+    setFormData({
+      id: null,
+      name: '',
+      patternType: type,
+      startDate: format(new Date(), 'yyyy-MM-dd'),
+      periode: '1',
+      unitPeriode: 'Minggu',
+      category: type === 'SPECIAL' ? 'Ramadhan / Khusus' : 'Guru'
+    });
+    setShowAdd(true);
+  };
+
   const handleEditPattern = (p: any) => {
     const periVal = p.cycleDays >= 7 && p.cycleDays % 7 === 0 ? Math.floor(p.cycleDays / 7) : p.cycleDays;
     const unitVal = p.cycleDays >= 7 && p.cycleDays % 7 === 0 ? 'Minggu' : 'Hari';
+    const isSpecial = isSpecialPattern(p);
     
     setFormData({
       id: p.id,
       name: p.name,
+      patternType: isSpecial ? 'SPECIAL' : 'REGULER',
       startDate: p.startDate ? format(new Date(p.startDate), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
       periode: String(periVal),
       unitPeriode: unitVal,
-      category: p.category || 'Guru'
+      category: p.category || (isSpecial ? 'Ramadhan / Khusus' : 'Guru')
     });
     setShowEdit(true);
   };
@@ -101,19 +177,22 @@ const RosterPage = () => {
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     const cycleDays = formData.unitPeriode === 'Minggu' ? parseInt(formData.periode) * 7 : parseInt(formData.periode);
+    const finalCategory = formData.patternType === 'SPECIAL' && !formData.category.toLowerCase().includes('khusus') && !formData.category.toLowerCase().includes('ramadhan')
+      ? 'Ramadhan / Khusus'
+      : formData.category;
     
     try {
       await axios.put(`${API_URL}/patterns/${formData.id}`, {
         name: formData.name,
         startDate: formData.startDate,
         cycleDays: cycleDays,
-        category: formData.category
+        category: finalCategory
       });
       toast.success('Pola shift diperbarui');
       setShowEdit(false);
       fetchData();
       if (selectedPattern?.id === formData.id) {
-        setSelectedPattern({...selectedPattern, name: formData.name, startDate: formData.startDate, cycleDays, category: formData.category});
+        setSelectedPattern({...selectedPattern, name: formData.name, startDate: formData.startDate, cycleDays, category: finalCategory});
       }
     } catch (err) {
       toast.error('Gagal update pola shift');
@@ -123,17 +202,19 @@ const RosterPage = () => {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     const cycleDays = formData.unitPeriode === 'Minggu' ? parseInt(formData.periode) * 7 : parseInt(formData.periode);
+    const finalCategory = formData.patternType === 'SPECIAL' && !formData.category.toLowerCase().includes('khusus') && !formData.category.toLowerCase().includes('ramadhan')
+      ? 'Ramadhan / Khusus'
+      : formData.category;
     
     try {
       const res = await axios.post(`${API_URL}/patterns`, {
         name: formData.name,
-        category: formData.category,
+        category: finalCategory,
         cycleDays: cycleDays,
         startDate: formData.startDate
       });
       toast.success('Pola shift baru dibuat');
       setShowAdd(false);
-      setFormData({ ...formData, name: '', startDate: format(new Date(), 'yyyy-MM-dd'), periode: '1', unitPeriode: 'Minggu', category: 'Guru', id: null });
       fetchData();
       selectPattern(res.data);
     } catch (err) {
@@ -199,14 +280,12 @@ const RosterPage = () => {
     for (let i = 1; i <= totalDays; i++) {
       const dayLabel = getDayLabel(i);
       if (type === 'workdays') {
-        // Senin s/d Sabtu
         if (dayLabel !== 'Minggu') {
           if (timetableId) newItems[i] = timetableId;
         } else {
-          newItems[i] = ''; // Minggu libur
+          newItems[i] = '';
         }
       } else if (type === 'mon_thu') {
-        // Senin s/d Kamis
         if (['Senin', 'Selasa', 'Rabu', 'Kamis'].includes(dayLabel) && timetableId) {
           newItems[i] = timetableId;
         }
@@ -226,13 +305,18 @@ const RosterPage = () => {
     toast.success('Pola shift berhasil diisi otomatis!');
   };
 
-  // Filtered patterns by search query
+  // Filtered patterns by active tab & search query
   const filteredPatterns = useMemo(() => {
-    return patterns.filter(p => 
+    let list = patterns;
+    if (patternMode === 'REGULER') list = regularPatterns;
+    else if (patternMode === 'SPECIAL') list = specialPatterns;
+
+    if (!searchQuery) return list;
+    return list.filter(p => 
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (p.category && p.category.toLowerCase().includes(searchQuery.toLowerCase()))
     );
-  }, [patterns, searchQuery]);
+  }, [patterns, regularPatterns, specialPatterns, patternMode, searchQuery]);
 
   // Weeks breakdown for multi-week cycles
   const totalWeeks = useMemo(() => {
@@ -266,13 +350,10 @@ const RosterPage = () => {
         </div>
         <div className="flex items-center gap-2">
           <button 
-            onClick={() => {
-              setFormData({ id: null, name: '', startDate: format(new Date(), 'yyyy-MM-dd'), periode: '1', unitPeriode: 'Minggu', category: 'Guru' });
-              setShowAdd(true);
-            }}
+            onClick={() => handleOpenAdd(patternMode === 'SPECIAL' ? 'SPECIAL' : 'REGULER')}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-md shadow-blue-600/20 active:scale-95 cursor-pointer"
           >
-            <i className="fa-solid fa-plus text-xs"></i> Tambah Pola Rotasi
+            <i className="fa-solid fa-plus text-xs"></i> {patternMode === 'SPECIAL' ? 'Tambah Pola Khusus' : 'Tambah Pola Rotasi'}
           </button>
         </div>
       </header>
@@ -280,18 +361,64 @@ const RosterPage = () => {
       {/* MAIN CONTENT: 2-COLUMN BALANCED LAYOUT */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         
-        {/* LEFT COLUMN: MASTER PATTERNS (COMPACT & SEARCHABLE) */}
+        {/* LEFT COLUMN: MASTER PATTERNS (COMPACT & SEARCHABLE WITH TABS) */}
         <div className="lg:col-span-4 space-y-3">
           <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm space-y-3">
-            {/* Header & Count */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Daftar Pola</span>
-                <span className="text-[11px] font-bold px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full">
-                  {filteredPatterns.length}
-                </span>
+            
+            {/* Mode Switcher Tabs */}
+            <div className="flex bg-slate-100 p-1 rounded-xl items-center">
+              <div className="flex-1 relative group/tab">
+                <button
+                  onClick={() => setPatternMode('REGULER')}
+                  className={`w-full py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                    patternMode === 'REGULER' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <span className="truncate">☀️ {regularTabLabel}</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${patternMode === 'REGULER' ? 'bg-blue-50 text-blue-600' : 'bg-slate-200 text-slate-600'}`}>
+                    {regularPatterns.length}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handleOpenRenameModal('REGULER'); }}
+                    className="opacity-0 group-hover/tab:opacity-100 hover:text-blue-700 text-slate-400 p-0.5 rounded hover:bg-slate-100 transition-all text-[10px]"
+                    title="Ubah nama tab ini"
+                  >
+                    <i className="fa-solid fa-pen"></i>
+                  </button>
+                </button>
               </div>
-              <span className="text-[11px] text-slate-400 font-medium">Klik untuk edit susunan</span>
+
+              <div className="flex-1 relative group/tab">
+                <button
+                  onClick={() => setPatternMode('SPECIAL')}
+                  className={`w-full py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                    patternMode === 'SPECIAL' ? 'bg-white text-purple-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <span className="truncate">🌙 {specialTabLabel}</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${patternMode === 'SPECIAL' ? 'bg-purple-50 text-purple-600' : 'bg-slate-200 text-slate-600'}`}>
+                    {specialPatterns.length}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handleOpenRenameModal('SPECIAL'); }}
+                    className="opacity-60 group-hover/tab:opacity-100 hover:text-purple-700 text-slate-400 p-0.5 rounded hover:bg-purple-50 transition-all text-[10px]"
+                    title="Ubah nama tab ini"
+                  >
+                    <i className="fa-solid fa-pen"></i>
+                  </button>
+                </button>
+              </div>
+
+              <button
+                onClick={() => setPatternMode('ALL')}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  patternMode === 'ALL' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Semua
+              </button>
             </div>
 
             {/* Quick Search */}
@@ -315,9 +442,10 @@ const RosterPage = () => {
             </div>
 
             {/* Scrollable Compact Pattern List */}
-            <div className="space-y-2 max-h-[calc(100vh-280px)] min-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
+            <div className="space-y-2 max-h-[calc(100vh-320px)] min-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
               {filteredPatterns.map(p => {
                 const isSelected = selectedPattern?.id === p.id;
+                const isSpecial = isSpecialPattern(p);
                 const assignedDays = p.items ? p.items.filter((it: any) => it.timetableId).length : 0;
                 const weeksCount = p.cycleDays >= 7 && p.cycleDays % 7 === 0 ? p.cycleDays / 7 : null;
 
@@ -327,21 +455,32 @@ const RosterPage = () => {
                     onClick={() => selectPattern(p)}
                     className={`group relative p-3.5 rounded-xl border cursor-pointer transition-all duration-200 ${
                       isSelected 
-                        ? 'bg-blue-50/70 border-blue-500 shadow-sm ring-1 ring-blue-500/20' 
+                        ? isSpecial
+                          ? 'bg-purple-50/70 border-purple-500 shadow-sm ring-1 ring-purple-500/20'
+                          : 'bg-blue-50/70 border-blue-500 shadow-sm ring-1 ring-blue-500/20'
                         : 'bg-white hover:bg-slate-50 border-slate-200/80 hover:border-slate-300'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs flex-shrink-0 font-bold ${
-                          isSelected ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 group-hover:bg-blue-50 group-hover:text-blue-600'
+                          isSelected 
+                            ? isSpecial ? 'bg-purple-600 text-white shadow-sm' : 'bg-blue-600 text-white shadow-sm'
+                            : isSpecial ? 'bg-purple-50 text-purple-600' : 'bg-slate-100 text-slate-500 group-hover:bg-blue-50 group-hover:text-blue-600'
                         }`}>
-                          <i className="fa-solid fa-rotate text-xs"></i>
+                          <i className={`fa-solid ${isSpecial ? 'fa-moon' : 'fa-rotate'} text-xs`}></i>
                         </div>
                         <div className="min-w-0">
-                          <h4 className={`text-xs font-bold truncate ${isSelected ? 'text-blue-950' : 'text-slate-800'}`}>
-                            {p.name}
-                          </h4>
+                          <div className="flex items-center gap-1.5">
+                            <h4 className={`text-xs font-bold truncate ${isSelected ? 'text-slate-900' : 'text-slate-800'}`}>
+                              {p.name}
+                            </h4>
+                            {isSpecial && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.2 bg-purple-100 text-purple-700 rounded">
+                                Khusus
+                              </span>
+                            )}
+                          </div>
                           <div className="flex items-center gap-2 mt-0.5">
                             <span className="text-[10px] font-semibold text-slate-500">
                               {p.cycleDays} Hari {weeksCount ? `(${weeksCount} Mgg)` : ''}
@@ -369,11 +508,27 @@ const RosterPage = () => {
               })}
 
               {filteredPatterns.length === 0 && !loading && (
-                <div className="text-center py-10 px-4 bg-slate-50/50 border border-dashed border-slate-200 rounded-xl text-slate-400">
-                  <i className="fa-solid fa-filter-circle-xmark text-2xl mb-2 opacity-40"></i>
-                  <p className="text-xs font-semibold">Pola rotasi tidak ditemukan</p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">Coba kata kunci pencarian lain</p>
-                </div>
+                patternMode === 'SPECIAL' ? (
+                  <div className="text-center py-8 px-4 bg-purple-50/30 border border-dashed border-purple-200 rounded-xl text-slate-500">
+                    <div className="w-10 h-10 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center mx-auto mb-2 text-base">
+                      <i className="fa-solid fa-moon"></i>
+                    </div>
+                    <p className="text-xs font-bold text-slate-700">Pola Khusus / Ramadhan Kosong</p>
+                    <p className="text-[11px] text-slate-400 mt-1 mb-3">Pola reguler tersimpan aman. Buat pola khusus untuk Ramadhan atau masa insidental kapan saja.</p>
+                    <button
+                      onClick={() => handleOpenAdd('SPECIAL')}
+                      className="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-bold hover:bg-purple-700 transition-colors inline-flex items-center gap-1.5"
+                    >
+                      <i className="fa-solid fa-plus text-[10px]"></i> Buat Pola Khusus
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-center py-10 px-4 bg-slate-50/50 border border-dashed border-slate-200 rounded-xl text-slate-400">
+                    <i className="fa-solid fa-filter-circle-xmark text-2xl mb-2 opacity-40"></i>
+                    <p className="text-xs font-semibold">Pola rotasi tidak ditemukan</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Coba kata kunci pencarian lain</p>
+                  </div>
+                )
               )}
             </div>
           </div>
@@ -390,6 +545,15 @@ const RosterPage = () => {
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="text-lg font-bold text-slate-800 tracking-tight">{selectedPattern.name}</h3>
+                      {isSpecialPattern(selectedPattern) ? (
+                        <span className="text-[10px] font-bold px-2 py-0.5 bg-purple-100 text-purple-700 rounded-md flex items-center gap-1">
+                          <i className="fa-solid fa-moon text-[9px]"></i> Khusus / Ramadhan
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-md flex items-center gap-1">
+                          <i className="fa-solid fa-sun text-[9px]"></i> Reguler
+                        </span>
+                      )}
                       <span className="text-[10px] font-bold px-2 py-0.5 bg-blue-100/80 text-blue-700 rounded-md">
                         {selectedPattern.cycleDays} Hari Siklus
                       </span>
@@ -460,9 +624,20 @@ const RosterPage = () => {
                           className="w-full bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-2.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         >
                           <option value="">-- Pilih Jam Kerja --</option>
-                          {timetables.map(t => (
-                            <option key={t.id} value={t.id}>{t.name} ({t.jamMasuk} - {t.jamPulang})</option>
-                          ))}
+                          {regularTimetables.length > 0 && (
+                            <optgroup label="☀️ Jam Kerja Reguler">
+                              {regularTimetables.map(t => (
+                                <option key={t.id} value={t.id}>{t.name} ({t.jamMasuk} - {t.jamPulang})</option>
+                              ))}
+                            </optgroup>
+                          )}
+                          {specialTimetables.length > 0 && (
+                            <optgroup label="🌙 Jam Kerja Khusus / Ramadhan">
+                              {specialTimetables.map(t => (
+                                <option key={t.id} value={t.id}>{t.name} ({t.jamMasuk} - {t.jamPulang})</option>
+                              ))}
+                            </optgroup>
+                          )}
                         </select>
                       </div>
 
@@ -569,7 +744,9 @@ const RosterPage = () => {
                           isSunday 
                             ? 'bg-rose-50/25 border-rose-200/70 hover:border-rose-300' 
                             : selectedTt 
-                              ? 'bg-white border-blue-200/80 hover:border-blue-300 shadow-xs' 
+                              ? isSpecialTimetable(selectedTt)
+                                ? 'bg-purple-50/30 border-purple-200 hover:border-purple-300 shadow-xs'
+                                : 'bg-white border-blue-200/80 hover:border-blue-300 shadow-xs' 
                               : 'bg-slate-50/60 border-slate-200/70 hover:border-slate-300'
                         }`}
                       >
@@ -585,7 +762,11 @@ const RosterPage = () => {
 
                           <div>
                             {selectedTt ? (
-                              <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200/60 rounded-md">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 border rounded-md ${
+                                isSpecialTimetable(selectedTt)
+                                  ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                  : 'bg-emerald-50 text-emerald-700 border-emerald-200/60'
+                              }`}>
                                 {selectedTt.jamMasuk} - {selectedTt.jamPulang}
                               </span>
                             ) : (
@@ -596,23 +777,38 @@ const RosterPage = () => {
                           </div>
                         </div>
 
-                        {/* Timetable Dropdown */}
+                        {/* Timetable Dropdown (Grouped by Category / Type) */}
                         <div className="relative">
                           <select 
                             className={`w-full border rounded-lg py-2 px-3 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all cursor-pointer ${
                               selectedTt 
-                                ? 'bg-blue-50/40 border-blue-200 text-slate-800' 
+                                ? isSpecialTimetable(selectedTt)
+                                  ? 'bg-purple-50/40 border-purple-200 text-purple-900'
+                                  : 'bg-blue-50/40 border-blue-200 text-slate-800' 
                                 : 'bg-white border-slate-200 text-slate-500'
                             }`}
                             value={selectedTtId}
                             onChange={(e) => handleItemChange(dayNum, e.target.value)}
                           >
                             <option value="">-- LIBUR / LEPAS DINAS --</option>
-                            {timetables.map(t => (
-                              <option key={t.id} value={t.id}>
-                                {t.name} ({t.jamMasuk} - {t.jamPulang})
-                              </option>
-                            ))}
+                            {regularTimetables.length > 0 && (
+                              <optgroup label="☀️ Jam Kerja Reguler">
+                                {regularTimetables.map(t => (
+                                  <option key={t.id} value={t.id}>
+                                    {t.name} ({t.jamMasuk} - {t.jamPulang})
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
+                            {specialTimetables.length > 0 && (
+                              <optgroup label="🌙 Jam Kerja Khusus / Ramadhan">
+                                {specialTimetables.map(t => (
+                                  <option key={t.id} value={t.id}>
+                                    {t.name} ({t.jamMasuk} - {t.jamPulang})
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
                           </select>
                         </div>
                       </div>
@@ -676,12 +872,36 @@ const RosterPage = () => {
             
             <form onSubmit={showEdit ? handleUpdate : handleCreate} className="space-y-4">
               <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-600">Tipe Pola</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, patternType: 'REGULER', category: 'Guru' })}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                      formData.patternType === 'REGULER' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    ☀️ Reguler (Normal)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, patternType: 'SPECIAL', category: 'Ramadhan / Khusus' })}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                      formData.patternType === 'SPECIAL' ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    🌙 Khusus / Ramadhan
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1">
                 <label className="text-[11px] font-bold text-slate-600">Nama Pola Rotasi</label>
                 <input 
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3 text-xs text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" 
                   value={formData.name} 
                   onChange={e => setFormData({...formData, name: e.target.value})} 
-                  placeholder="Contoh: Guru, Penjaga_pagi, Shift Security" 
+                  placeholder={formData.patternType === 'SPECIAL' ? 'Contoh: Pola Ramadhan Guru, Pola Ramadhan TAS' : 'Contoh: Guru, Penjaga_pagi, Shift Security'} 
                   required 
                 />
               </div>
@@ -736,6 +956,114 @@ const RosterPage = () => {
                 >
                   {showEdit ? 'Simpan Perubahan' : 'Buat Pola'}
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDIT NAMA TAB */}
+      {renameTabType && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 relative overflow-hidden border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className={`absolute top-0 left-0 w-full h-1 ${renameTabType === 'SPECIAL' ? 'bg-purple-600' : 'bg-blue-600'}`}></div>
+            
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs ${
+                  renameTabType === 'SPECIAL' ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'
+                }`}>
+                  <i className="fa-solid fa-pen-to-square"></i>
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-800 tracking-tight">
+                    Ubah Nama Tab {renameTabType === 'SPECIAL' ? 'Khusus' : 'Reguler'}
+                  </h3>
+                  <p className="text-[11px] text-slate-400">Sesuaikan judul tab sesuai keperluan acara / musim</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setRenameTabType(null)} 
+                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors"
+              >
+                <i className="fa-solid fa-xmark text-sm"></i>
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTabName} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-600">Nama Tampilan Tab</label>
+                <input 
+                  type="text" 
+                  value={customTabInput}
+                  onChange={e => setCustomTabInput(e.target.value)}
+                  placeholder="Ketik nama tab..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3 text-sm text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  autoFocus
+                  required
+                />
+              </div>
+
+              {/* Rekomendasi Nama Cepat */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Contoh Cepat:</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {renameTabType === 'SPECIAL' ? (
+                    <>
+                      {['Khusus / Ramadhan', 'Ramadhan 1447 H', 'Bulan Puasa', 'Ujian PTS/PAS', 'Insidental'].map(suggestion => (
+                        <button
+                          key={suggestion}
+                          type="button"
+                          onClick={() => setCustomTabInput(suggestion)}
+                          className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg text-xs font-medium transition-all"
+                        >
+                          {suggestion}
+                        </button>
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      {['Reguler', 'Normal', 'Standar', 'Harian'].map(suggestion => (
+                        <button
+                          key={suggestion}
+                          type="button"
+                          onClick={() => setCustomTabInput(suggestion)}
+                          className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-medium transition-all"
+                        >
+                          {suggestion}
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="pt-3 flex items-center justify-between border-t border-slate-100 mt-5">
+                <button 
+                  type="button" 
+                  onClick={handleResetTabName} 
+                  className="text-xs font-semibold text-rose-500 hover:text-rose-700 transition-colors"
+                >
+                  Reset Default
+                </button>
+
+                <div className="flex gap-2">
+                  <button 
+                    type="button" 
+                    onClick={() => setRenameTabType(null)} 
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 transition-colors"
+                  >
+                    Batal
+                  </button>
+                  <button 
+                    type="submit" 
+                    className={`px-5 py-2 rounded-xl font-bold text-xs text-white shadow-md transition-all active:scale-95 ${
+                      renameTabType === 'SPECIAL' ? 'bg-purple-600 hover:bg-purple-700 shadow-purple-600/20' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20'
+                    }`}
+                  >
+                    Simpan Nama
+                  </button>
+                </div>
               </div>
             </form>
           </div>
