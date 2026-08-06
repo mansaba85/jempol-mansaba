@@ -1,16 +1,31 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { format, startOfMonth, endOfMonth, parse } from 'date-fns';
 import toast, { Toaster } from 'react-hot-toast';
 
 const API_URL = '/api';
 
+const MONTH_NAMES = [
+  "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+  "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+];
+
 const ReportsPage = () => {
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [reportMode, setReportMode] = useState<'summary' | 'detailed'>('detailed');
-  const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
-  const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
+  
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+
+  const startDate = useMemo(() => {
+    return format(startOfMonth(new Date(selectedYear, selectedMonth - 1, 1)), 'yyyy-MM-dd');
+  }, [selectedMonth, selectedYear]);
+
+  const endDate = useMemo(() => {
+    return format(endOfMonth(new Date(selectedYear, selectedMonth - 1, 1)), 'yyyy-MM-dd');
+  }, [selectedMonth, selectedYear]);
+
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
   const [searchEmp, setSearchEmp] = useState('');
   const [showEmpList, setShowEmpList] = useState(false);
@@ -27,13 +42,40 @@ const ReportsPage = () => {
         axios.get(`${API_URL}/settings`)
       ]);
       setEmployees(eRes.data);
+      if (eRes.data.length > 0 && !selectedEmployeeId) {
+        setSelectedEmployeeId(String(eRes.data[0].id));
+      }
       const cMap: any = {};
       cRes.data.forEach((s: any) => cMap[s.key] = s.value);
       setConfig(cMap);
     } catch (err) {
       toast.error('Gagal memuat data pegawai');
     }
-  }, []);
+  }, [selectedEmployeeId]);
+
+  const handlePrevMonth = () => {
+    if (selectedMonth === 1) {
+      setSelectedMonth(12);
+      setSelectedYear(prev => prev - 1);
+    } else {
+      setSelectedMonth(prev => prev - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (selectedMonth === 12) {
+      setSelectedMonth(1);
+      setSelectedYear(prev => prev + 1);
+    } else {
+      setSelectedMonth(prev => prev + 1);
+    }
+  };
+
+  const handleCurrentMonth = () => {
+    const now = new Date();
+    setSelectedMonth(now.getMonth() + 1);
+    setSelectedYear(now.getFullYear());
+  };
 
   const generateReport = useCallback(async () => {
     if (!selectedEmployeeId || (reportMode === 'detailed' && selectedEmployeeId === 'all')) {
@@ -204,7 +246,7 @@ const ReportsPage = () => {
             
             <div class="kop-report-title">
               <h2>DETAIL PRESENSI</h2>
-              <p>Periode: ${startDate} s/d ${endDate}</p>
+              <p>Periode: ${MONTH_NAMES[selectedMonth - 1].toUpperCase()} ${selectedYear}</p>
             </div>
           </div>
           
@@ -297,7 +339,7 @@ const ReportsPage = () => {
                 </div>
                 <div class="kop-report-title">
                   <h2>DETAIL PRESENSI</h2>
-                  <p>Periode: ${startDate} s/d ${endDate}</p>
+                  <p>Periode: ${MONTH_NAMES[selectedMonth - 1].toUpperCase()} ${selectedYear}</p>
                 </div>
               </div>
               
@@ -467,7 +509,7 @@ const ReportsPage = () => {
 
             <div class="kop-report-title">
               <h2>REKAPITULASI PRESENSI</h2>
-              <p>Periode: ${startDate} s/d ${endDate}</p>
+              <p>Periode: ${MONTH_NAMES[selectedMonth - 1].toUpperCase()} ${selectedYear}</p>
             </div>
           </div>
 
@@ -532,12 +574,56 @@ const ReportsPage = () => {
       </header>
 
       <div className="mansaba-card p-4 flex flex-col md:flex-row items-center gap-4 sticky top-4 z-40 bg-white/80 backdrop-blur-md">
-         {/* Filter Rentang Tanggal */}
-         <div className="flex items-center gap-2 border border-slate-200 rounded-lg px-4 py-2 w-full md:w-auto bg-white">
-            <i className="fa-regular fa-calendar text-slate-400"></i>
-            <input type="date" className="bg-transparent text-sm font-medium text-slate-800 outline-none w-full" value={startDate} onChange={e => setStartDate(e.target.value)} />
-            <span className="text-slate-300">|</span>
-            <input type="date" className="bg-transparent text-sm font-medium text-slate-800 outline-none w-full" value={endDate} onChange={e => setEndDate(e.target.value)} />
+         {/* Filter Bulan & Tahun */}
+         <div className="flex items-center gap-1.5 border border-slate-200 rounded-xl px-2 py-1.5 bg-white shadow-sm w-full md:w-auto">
+            <button 
+              onClick={handlePrevMonth}
+              title="Bulan Sebelumnya" 
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors"
+            >
+              <i className="fa-solid fa-chevron-left text-xs"></i>
+            </button>
+
+            <div className="flex items-center gap-1.5 px-2">
+              <i className="fa-regular fa-calendar text-blue-600 text-sm"></i>
+              <select 
+                value={selectedMonth} 
+                onChange={e => setSelectedMonth(Number(e.target.value))}
+                className="bg-transparent text-sm font-bold text-slate-800 outline-none cursor-pointer hover:text-blue-600 transition-colors"
+              >
+                {MONTH_NAMES.map((m, idx) => (
+                  <option key={idx + 1} value={idx + 1}>{m}</option>
+                ))}
+              </select>
+
+              <select 
+                value={selectedYear} 
+                onChange={e => setSelectedYear(Number(e.target.value))}
+                className="bg-transparent text-sm font-bold text-slate-800 outline-none cursor-pointer hover:text-blue-600 transition-colors border-l border-slate-200 pl-2"
+              >
+                {[2024, 2025, 2026, 2027, 2028].map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
+
+            <button 
+              onClick={handleNextMonth} 
+              title="Bulan Berikutnya"
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors"
+            >
+              <i className="fa-solid fa-chevron-right text-xs"></i>
+            </button>
+
+            {(selectedMonth !== new Date().getMonth() + 1 || selectedYear !== new Date().getFullYear()) && (
+              <button
+                onClick={handleCurrentMonth}
+                className="px-2.5 py-1 bg-blue-50 text-blue-600 text-[11px] font-bold rounded-lg hover:bg-blue-100 transition-colors ml-1"
+                title="Kembali ke Bulan Berjalan"
+              >
+                Bulan Ini
+              </button>
+            )}
          </div>
 
          {/* Filter Pegawai */}
