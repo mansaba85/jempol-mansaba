@@ -22,7 +22,7 @@ services:
     container_name: mansaba_db
     restart: unless-stopped
     ports:
-      - "3306:3306"
+      - "3385:3306"
     environment:
       - MYSQL_DATABASE=mansaba_db
       - MYSQL_USER=mansaba_user
