@@ -1802,8 +1802,7 @@ app.get('/api/reports/monthly', async (req, res) => {
               const ddL = d.getUTCDate().toString().padStart(2, '0');
               const dateJkt = `${yyyyL}-${mmL}-${ddL}`;
 
-              // dateStr sudah dalam format YYYY-MM-DD dari getJktDateStr
-              return dateJkt === dateStr && ((timeRaw >= startRange && timeRaw <= endRange) || (timeJkt >= startRange && timeJkt <= endRange));
+              return dateJkt === dateStr && (timeJkt >= startRange && timeJkt <= endRange);
             });
 
             if (matches.length === 0) return null;
@@ -2136,7 +2135,7 @@ app.get('/api/honor/recap', async (req, res) => {
           const ddL = d.getUTCDate().toString().padStart(2, '0');
           const dateJkt = `${yyyyL}-${mmL}-${ddL}`;
 
-          return dateJkt === targetD && ((timeRaw >= startRange && timeRaw <= endRange) || (timeJkt >= startRange && timeJkt <= endRange));
+          return dateJkt === targetD && (timeJkt >= startRange && timeJkt <= endRange);
           });
 
           if (matches.length === 0) return null;
