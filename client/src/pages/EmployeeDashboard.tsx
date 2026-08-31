@@ -196,9 +196,32 @@ const EmployeeDashboard = () => {
              <div className="text-center py-20 text-slate-400 font-medium italic">Tidak ada data</div>
            )}
            
+           {/* Keterangan Disiplin Bulan Ini */}
+           {data?.summary && (
+             <div className="px-4 mt-8">
+               <div className="bg-white rounded-3xl p-5 shadow-xl shadow-slate-200/50 border border-slate-100">
+                 <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 border-b border-slate-50 pb-2">Keterangan Disiplin</h3>
+                 <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-emerald-50 rounded-2xl p-3 text-center border border-emerald-100">
+                       <span className="text-xl font-black text-emerald-600 tabular-nums block">{data.summary.disciplinedDays || 0}</span>
+                       <span className="text-[8px] font-bold text-emerald-500 uppercase tracking-widest mt-1 block">Disiplin</span>
+                    </div>
+                    <div className="bg-amber-50 rounded-2xl p-3 text-center border border-amber-100">
+                       <span className="text-xl font-black text-amber-600 tabular-nums block">{data.summary.nonDisciplinedDays || 0}</span>
+                       <span className="text-[8px] font-bold text-amber-500 uppercase tracking-widest mt-1 block">Tidak Disiplin</span>
+                    </div>
+                    <div className="bg-rose-50 rounded-2xl p-3 text-center border border-rose-100">
+                       <span className="text-xl font-black text-rose-600 tabular-nums block">{Math.max(0, (data.summary.totalDaysInPeriod || 0) - (data.summary.totalDays || 0))}</span>
+                       <span className="text-[8px] font-bold text-rose-500 uppercase tracking-widest mt-1 block">Tidak Hadir</span>
+                    </div>
+                 </div>
+               </div>
+             </div>
+           )}
+
            {/* Honor Summary Footer */}
            {data?.summary && (
-             <div className="px-4 mt-8 mb-10">
+             <div className="px-4 mt-6 mb-10">
                <div className="bg-white rounded-3xl p-6 shadow-xl shadow-slate-200/50 border border-slate-100">
                   <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 border-b border-slate-50 pb-2">Estimasi Honor Bulan Ini</h3>
                   
