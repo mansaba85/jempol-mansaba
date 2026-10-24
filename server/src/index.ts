@@ -526,6 +526,20 @@ app.put('/api/timetables/:id', async (req, res) => {
   const id = parseInt(req.params.id);
   try {
     const { categoryId, ...rest } = req.body;
+    // Bekukan field waktu timetable yang sudah terpakai penugasan masa lalu:
+    // mengubahnya akan menilai ulang bulan-bulan sebelumnya.
+    const TIME_FIELDS = ['jamMasuk', 'jamPulang', 'mulaiScanIn', 'akhirScanIn', 'mulaiScanOut', 'akhirScanOut', 'days'];
+    const existingTt: any = await prisma.timetable.findUnique({ where: { id } });
+    if (existingTt && TIME_FIELDS.some(f => rest[f] !== undefined && String(rest[f]) !== String(existingTt[f] ?? ''))) {
+      const usedBy = await prisma.shiftpatternitem.findFirst({ where: { timetableId: id }, select: { patternId: true } });
+      if (usedBy) {
+        const firstUse = await prisma.employeepattern.findFirst({ where: { patternId: usedBy.patternId }, orderBy: { startDate: 'asc' } });
+        const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+        if (firstUse && new Date(firstUse.startDate) < todayStart) {
+          return res.status(409).json({ error: 'Jadwal ini sudah terpakai pada penugasan sejak ' + new Date(firstUse.startDate).toISOString().slice(0,10) + '. Mengubah jamnya akan mengubah penilaian bulan-bulan sebelumnya — buat jadwal (timetable) baru untuk perubahan.' });
+        }
+      }
+    }
     const timetable = await prisma.timetable.update({ 
       where: { id }, 
       data: { 
@@ -542,6 +556,10 @@ app.put('/api/timetables/:id', async (req, res) => {
 
 app.delete('/api/timetables/:id', async (req, res) => {
   const id = parseInt(req.params.id);
+  const usedBy = await prisma.shiftpatternitem.findFirst({ where: { timetableId: id } });
+  if (usedBy) {
+    return res.status(409).json({ error: 'Jadwal ini masih dipakai dalam pola shift dan tidak dapat dihapus.' });
+  }
   await prisma.timetable.delete({ where: { id } });
   res.json({ success: true });
 });
@@ -562,11 +580,12 @@ app.get('/api/patterns', async (req, res) => {
 app.post('/api/patterns', async (req, res) => {
   const { name, category, cycleDays, startDate, items } = req.body;
   try {
+    const maxDay = items && items.length > 0 ? Math.max(...items.map((it: any) => parseInt(it.dayNumber) || 0)) : 0;
     const pattern = await prisma.shiftpattern.create({
       data: {
         name,
         category,
-        cycleDays,
+        cycleDays: Math.max(parseInt(cycleDays) || 0, maxDay),
         startDate: startDate ? new Date(startDate) : null,
         ...(items && items.length > 0 ? {
           shiftpatternitem: {
@@ -587,6 +606,23 @@ app.put('/api/patterns/:id', async (req, res) => {
   const id = parseInt(req.params.id);
   const { name, category, cycleDays, startDate } = req.body;
   try {
+    const existingPat: any = await prisma.shiftpattern.findUnique({ where: { id }, include: { shiftpatternitem: true } });
+    if (!existingPat) return res.status(404).json({ error: 'Pola tidak ditemukan' });
+    const cycleChanged = cycleDays !== undefined && parseInt(cycleDays) !== existingPat.cycleDays;
+    const startChanged = startDate !== undefined && String(startDate).slice(0,10) !== (existingPat.startDate ? new Date(existingPat.startDate).toISOString().slice(0,10) : '');
+    if (cycleChanged || startChanged) {
+      const firstUse = await prisma.employeepattern.findFirst({ where: { patternId: id }, orderBy: { startDate: 'asc' } });
+      const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+      if (firstUse && new Date(firstUse.startDate) < todayStart) {
+        return res.status(409).json({ error: 'Pola ini sudah dipakai penugasan sejak ' + new Date(firstUse.startDate).toISOString().slice(0,10) + '. Mengubah siklus/tanggal mulainya akan mengubah penilaian bulan-bulan sebelumnya — buat pola baru untuk perubahan.' });
+      }
+    }
+    if (cycleChanged) {
+      const maxDay = existingPat.shiftpatternitem.reduce((m: number, it: any) => Math.max(m, it.dayNumber), 0);
+      if (parseInt(cycleDays) < maxDay) {
+        return res.status(409).json({ error: 'cycleDays tidak boleh lebih kecil dari hari item terbesar (' + maxDay + ').' });
+      }
+    }
     const pattern = await prisma.shiftpattern.update({
       where: { id },
       data: { 
@@ -604,15 +640,29 @@ app.post('/api/patterns/:id/items', async (req, res) => {
   const id = parseInt(req.params.id);
   const { items } = req.body;
   try {
+    // Bekukan isi pola yang sudah terpakai penugasan masa lalu: menimpa item
+    // akan menilai ulang semua bulan yang memakai pola ini.
+    const firstUse = await prisma.employeepattern.findFirst({ where: { patternId: id }, orderBy: { startDate: 'asc' } });
+    const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+    if (firstUse && new Date(firstUse.startDate) < todayStart) {
+      return res.status(409).json({ error: 'Pola ini sudah dipakai penugasan sejak ' + new Date(firstUse.startDate).toISOString().slice(0,10) + '. Isinya tidak dapat diubah agar riwayat penilaian tidak berubah — buat pola baru untuk perubahan.' });
+    }
+    const validItems = items.filter((it: any) => it.timetableId);
     await prisma.$transaction(async (tx) => {
       await tx.shiftpatternitem.deleteMany({ where: { patternId: id } });
       await tx.shiftpatternitem.createMany({
-        data: items.filter((it: any) => it.timetableId).map((it: any) => ({
+        data: validItems.map((it: any) => ({
           patternId: id,
           dayNumber: parseInt(it.dayNumber),
           timetableId: parseInt(it.timetableId)
         }))
       });
+      // Siklus harus menjangkau item terjauh, jika tidak item itu tidak pernah terpilih.
+      const maxDay = validItems.reduce((m: number, it: any) => Math.max(m, parseInt(it.dayNumber) || 0), 0);
+      const pat: any = await tx.shiftpattern.findUnique({ where: { id } });
+      if (pat && maxDay > pat.cycleDays) {
+        await tx.shiftpattern.update({ where: { id }, data: { cycleDays: maxDay } });
+      }
     });
     res.json({ success: true });
   } catch (error) { res.status(500).json({ error: 'Gagal simpan item pola' }); }
@@ -620,17 +670,76 @@ app.post('/api/patterns/:id/items', async (req, res) => {
 
 app.delete('/api/patterns/:id', async (req, res) => {
   const id = parseInt(req.params.id);
+  const usedCount = await prisma.employeepattern.count({ where: { patternId: id } });
+  if (usedCount > 0) {
+    return res.status(409).json({ error: 'Pola ini sudah terpakai dalam penugasan pegawai dan tidak dapat dihapus karena akan menghapus riwayat penilaian.' });
+  }
   await prisma.shiftpatternitem.deleteMany({ where: { patternId: id } });
   await prisma.employeepattern.deleteMany({ where: { patternId: id } });
   await prisma.shiftpattern.delete({ where: { id } });
   res.json({ success: true });
 });
 
+// --- PENUGASAN POLA SHIFT (anti-korup) ---
+// Periode penugasan adalah RIWAYAT penilaian: baris lama tidak boleh tumpang
+// tindih dan tanggal selesai tidak boleh mendahului tanggal mulai. Penugasan
+// baru hanya boleh menutup periode AKTIF (endDate null) pada tanggal >=
+// tanggal mulainya, atau mulai setelah periode tertutup terakhir berakhir.
+// Penugasan bertanggal mundur ke masa yang sudah tertutup DITOLAK agar
+// penilaian bulan-bulan sebelumnya tidak berubah. Koreksi riwayat yang sudah
+// terlanjur korup dilakukan lewat skrip server/scripts/fix-shift-periods.ts.
+const startOfDayLocal = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+
+async function assignEmployeePattern(tx: any, employeeId: number, patternId: number, startDateRaw: any): Promise<void> {
+  const newStart = startOfDayLocal(new Date(startDateRaw || new Date()));
+  if (isNaN(newStart.getTime())) throw new Error('Tanggal mulai penugasan tidak valid');
+  const newTs = newStart.getTime();
+  const fmt = (d: any) => new Date(d).toISOString().slice(0, 10);
+  const periods = await tx.employeepattern.findMany({
+    where: { employeeId },
+    orderBy: [{ startDate: 'asc' }, { id: 'asc' }]
+  });
+  for (const p of periods) {
+    if (!p.endDate) continue;
+    const sTs = startOfDayLocal(new Date(p.startDate)).getTime();
+    const eTs = startOfDayLocal(new Date(p.endDate)).getTime();
+    if (eTs >= sTs && newTs >= sTs && newTs <= eTs) {
+      throw new Error(`Tanggal mulai ${fmt(newStart)} masuk ke periode shift yang sudah tertutup (${fmt(p.startDate)} s.d. ${fmt(p.endDate)}). Penugasan tidak boleh mengubah riwayat.`);
+    }
+    if (newTs <= eTs) {
+      throw new Error(`Tanggal mulai ${fmt(newStart)} mendahului akhir periode sebelumnya (${fmt(p.endDate)}). Penugasan tidak boleh mengubah riwayat.`);
+    }
+  }
+  const active = periods
+    .filter((p: any) => !p.endDate)
+    .sort((a: any, b: any) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime() || b.id - a.id)[0];
+  if (active) {
+    const aTs = startOfDayLocal(new Date(active.startDate)).getTime();
+    if (newTs < aTs) {
+      throw new Error(`Tanggal mulai ${fmt(newStart)} mendahului periode aktif yang berjalan sejak ${fmt(active.startDate)}. Penugasan tidak boleh mengubah riwayat.`);
+    }
+    if (newTs === aTs) {
+      // Koreksi pola pada hari yang sama: ganti pola periode aktif di tempat.
+      if (active.patternId !== patternId) {
+        await tx.employeepattern.update({ where: { id: active.id }, data: { patternId } });
+      }
+      return;
+    }
+    await tx.employeepattern.update({
+      where: { id: active.id },
+      data: { endDate: new Date(newTs - 86400000) }
+    });
+  }
+  await tx.employeepattern.create({
+    data: { employeeId, patternId, startDate: newStart }
+  });
+}
+
 // Employees & Assignments
 app.get('/api/employees', async (req, res) => {
   const employees = await prisma.employee.findMany({
     include: { 
-      employeepattern: { include: { shiftpattern: true }, orderBy: { startDate: 'desc' } } 
+      employeepattern: { include: { shiftpattern: true }, orderBy: [{ startDate: 'desc' }, { id: 'desc' }] } 
     },
     orderBy: { id: 'asc' }
   });
@@ -675,24 +784,11 @@ app.post('/api/employees', async (req, res) => {
   });
 
   if (patternId && patternId !== 'none') {
-    const newStart = new Date(patternStartDate || new Date());
-    const activePattern = await prisma.employeepattern.findFirst({
-        where: { employeeId: empId, endDate: null },
-        orderBy: { startDate: 'desc' }
-    });
-    if (activePattern) {
-        await prisma.employeepattern.update({
-            where: { id: activePattern.id },
-            data: { endDate: new Date(newStart.getTime() - 86400000) }
-        });
+    try {
+      await assignEmployeePattern(prisma, empId, parseInt(String(patternId)), patternStartDate);
+    } catch (e: any) {
+      return res.status(400).json({ error: e.message || 'Penugasan pola ditolak' });
     }
-    await prisma.employeepattern.create({
-      data: {
-        employeeId: empId,
-        patternId: parseInt(String(patternId)),
-        startDate: newStart
-      }
-    });
   }
   res.json(employee);
 });
@@ -726,34 +822,22 @@ app.put('/api/employees/:id', async (req, res) => {
 
 app.post('/api/employees/bulk-pattern', async (req, res) => {
   const { employeeIds, patternId, startDate } = req.body;
-  try {
-    for (const id of employeeIds) {
-      const newStart = new Date(startDate);
-      const activePattern = await prisma.employeepattern.findFirst({
-        where: { employeeId: id, endDate: null },
-        orderBy: { startDate: 'desc' }
-      });
-
-      if (activePattern) {
-        const endD = new Date(newStart.getTime() - 86400000);
-        await prisma.employeepattern.update({
-          where: { id: activePattern.id },
-          data: { endDate: endD }
-        });
-      }
-
-      await prisma.employeepattern.create({
-        data: {
-          employeeId: id,
-          patternId: parseInt(patternId),
-          startDate: newStart
-        }
-      });
+  const failures: any[] = [];
+  for (const id of employeeIds) {
+    try {
+      await assignEmployeePattern(prisma, id, parseInt(patternId), startDate);
+    } catch (e: any) {
+      failures.push({ employeeId: id, error: e.message || 'Penugasan ditolak' });
     }
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: 'Gagal plotting massal' });
   }
+  if (failures.length > 0) {
+    return res.status(422).json({
+      success: false,
+      error: `${failures.length} dari ${employeeIds.length} pegawai gagal di-plot karena tanggalnya mengubah riwayat`,
+      failures
+    });
+  }
+  res.json({ success: true });
 });
 
 app.delete('/api/employees/:id', async (req, res) => {
@@ -1039,7 +1123,7 @@ app.delete('/api/attendance/manual', async (req, res) => {
 
     const emp = await prisma.employee.findUnique({
       where: { id: empId },
-      include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } } } }
+      include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } }, orderBy: [{ startDate: 'desc' }, { id: 'desc' }] } }
     });
 
     if (!emp) return res.status(404).json({ error: 'Pegawai tidak ditemukan' });
@@ -1132,7 +1216,7 @@ const runSyncAll = async (onProgress?: (step: string, percent: number, details?:
         return;
     }
     const employees = await prisma.employee.findMany({
-      include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } } } }
+      include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } }, orderBy: [{ startDate: 'desc' }, { id: 'desc' }] } }
     });
     const empMap = new Map(employees.map(e => [e.id, e]));
 
@@ -1299,7 +1383,7 @@ app.get('/api/machine/sync-one/:id', async (req, res) => {
     sendProgress(`Menghubungkan ke ${dev.name}...`, 10);
     
     const employees = await prisma.employee.findMany({
-      include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } } } }
+      include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } }, orderBy: [{ startDate: 'desc' }, { id: 'desc' }] } }
     });
     const empMap = new Map(employees.map(e => [e.id, e]));
 
@@ -1451,7 +1535,7 @@ app.get('/api/reports/detailed', async (req, res) => {
 
     const emp = await prisma.employee.findUnique({
       where: { id: empId },
-      include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } } } }
+      include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } }, orderBy: [{ startDate: 'desc' }, { id: 'desc' }] } }
     });
     if (!emp) return res.status(404).json({ error: 'Pegawai tidak ditemukan' });
 
@@ -1738,9 +1822,9 @@ app.get('/api/reports/monthly', async (req, res) => {
     const start = new Date(y, m - 1, 1), end = endOfMonth(start);
     let employees = [];
     if (employeeId === 'all') {
-      employees = await prisma.employee.findMany({ include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } } } } });
+      employees = await prisma.employee.findMany({ include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } }, orderBy: [{ startDate: 'desc' }, { id: 'desc' }] } } });
     } else {
-      const emp = await prisma.employee.findUnique({ where: { id: parseInt(String(employeeId)) }, include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } } } } });
+      const emp = await prisma.employee.findUnique({ where: { id: parseInt(String(employeeId)) }, include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } }, orderBy: [{ startDate: 'desc' }, { id: 'desc' }] } } });
       if (emp) employees = [emp];
     }
     const sys = await prisma.systemsetting.findMany();
@@ -1916,7 +2000,7 @@ app.get('/api/reports/progress', async (req, res) => {
     const startYear = new Date(year, 0, 1);
     const endYear = new Date(year, 11, 31, 23, 59, 59);
 
-    const employees = await prisma.employee.findMany({ include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } } } } });
+    const employees = await prisma.employee.findMany({ include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } }, orderBy: [{ startDate: 'desc' }, { id: 'desc' }] } } });
     const allLogs = await prisma.attendance.findMany({ where: { timestamp: { gte: startYear, lte: endYear } }, orderBy: { timestamp: 'asc' } });
     const hList = await prisma.holiday.findMany({ where: { date: { gte: startYear, lte: endYear } } });
 
@@ -2037,7 +2121,7 @@ app.get('/api/honor/recap', async (req, res) => {
   const vV = parseInt(String(sMap.get('voucher_nominal') || 30000));
   const pL = parseInt(sMap.get('penalty_late_minutes') || '0');
   const pE = parseInt(sMap.get('penalty_early_minutes') || '0');
-  const employees = await prisma.employee.findMany({ include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } } } } });
+  const employees = await prisma.employee.findMany({ include: { employeepattern: { include: { shiftpattern: { include: { shiftpatternitem: { include: { timetable: true } } } } }, orderBy: [{ startDate: 'desc' }, { id: 'desc' }] } } });
   
   const allLogs = await prisma.attendance.findMany({ 
     where: { 
@@ -2295,7 +2379,8 @@ app.get('/api/reports/absent', async (req, res) => {
                 shiftpatternitem: { include: { timetable: true } } 
               } 
             } 
-          } 
+          },
+          orderBy: [{ startDate: 'desc' }, { id: 'desc' }] 
         } 
       } 
     });

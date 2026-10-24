@@ -13,7 +13,11 @@
     "outDir": "./dist",
     "rootDir": "./src"
   },
-  "exclude": ["node_modules", "scratch"],
+  "exclude": [
+    "node_modules",
+    "scratch",
+    "scripts"
+  ],
   "ts-node": {
     "esm": true
   }
