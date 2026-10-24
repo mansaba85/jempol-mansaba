@@ -857,7 +857,7 @@ const EmployeesPage = () => {
             </div>
          </div>
          );
-      })}
+      })()}
     </div>
   );
 };
