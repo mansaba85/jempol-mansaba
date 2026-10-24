@@ -1823,43 +1823,90 @@ app.get('/api/reports/monthly', async (req, res) => {
     const pE = parseInt(sMap.get('penalty_early_minutes') || '0');
     const hList = await prisma.holiday.findMany();
 
+    // --- OPTIMASI: satu query presensi untuk semua pegawai + pra-hitung ---
+    // Sebelumnya: 1 query presensi PER pegawai, dan per hari per pegawai
+    // seluruh log difilter ulang lewat toLocaleString + regex (ratusan ribu
+    // pemanggilan Intl per request) sehingga halaman /recap memuat sangat lama.
+    // Sekarang: log diproses sekali — kunci tanggal "lama" (getJktDateStr,
+    // termasuk kuirk pra-Mei 2026) dan tanggal/jam Jakarta dihitung di muka,
+    // lalu dikelompokkan per pegawai per tanggal. Rumus penilaian TIDAK
+    // diubah, kecuali satu perbaikan bug di bawah (tandai PERBAIKAN).
+    const jktFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' });
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+    const utcDate = (d: Date) => `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+    const toHM = (mins: number) => `${pad2(Math.floor(mins / 60))}:${pad2(mins % 60)}`;
+    const hm = (t: string) => { const [h, mm] = t.split(/[:.]/).map(Number); return (h || 0) * 60 + (mm || 0); };
+
+    const allLogs = await prisma.attendance.findMany({
+      where: { timestamp: { gte: start, lte: new Date(end.getTime() + 86400000) } }
+    });
+    // logsByEmp: employeeId -> tanggalKunciLama -> log[] (dengan field pra-hitung)
+    const logsByEmp = new Map<number, Map<string, any[]>>();
+    for (const l of allLogs) {
+      const ts = l.timestamp.getTime();
+      const j = new Date(ts + 7 * 60 * 60 * 1000);
+      const jktDate = utcDate(j);
+      const jktMins = j.getUTCHours() * 60 + j.getUTCMinutes();
+      const isOld = j.getUTCFullYear() < 2026 || (j.getUTCFullYear() === 2026 && j.getUTCMonth() + 1 < 5);
+      const oldKey = isOld ? utcDate(l.timestamp) : jktDate;
+      const rec = { ...l, _jktDate: jktDate, _jktTime: toHM(jktMins), _jktMins: jktMins,
+                    _rawMins: l.timestamp.getUTCHours() * 60 + l.timestamp.getUTCMinutes() };
+      if (!logsByEmp.has(l.employeeId)) logsByEmp.set(l.employeeId, new Map());
+      const byDay = logsByEmp.get(l.employeeId)!;
+      if (!byDay.has(oldKey)) byDay.set(oldKey, []);
+      byDay.get(oldKey)!.push(rec);
+    }
+    const holidayByDate = new Map<string, any>();
+    for (const h of hList) holidayByDate.set(jktFmt.format(h.date), h);
+
+    const findBestLog = (logList: any[], startRange: string, endRange: string, targetDate: string, isEarliest: boolean) => {
+      let best: any = null;
+      for (const l of logList) {
+        if (l._jktDate !== targetDate) continue;
+        if (l._jktTime < startRange || l._jktTime > endRange) continue;
+        if (!best) { best = l; continue; }
+        if (isEarliest ? l.timestamp.getTime() < best.timestamp.getTime()
+                       : l.timestamp.getTime() > best.timestamp.getTime()) best = l;
+      }
+      return best;
+    };
+
     const results = [];
     for (const emp of employees) {
-      const logs = await prisma.attendance.findMany({ where: { employeeId: emp.id, timestamp: { gte: start, lte: new Date(end.getTime() + 86400000) } } });
+      const byDay = logsByEmp.get(emp.id) || new Map();
       let totalDays = 0, totalLate = 0, totalEarly = 0, totalWorkDays = 0, totalWorkDuration = 0;
       let cd = new Date(start);
       while (cd <= end) {
-        const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(cd);
-        let tt: any = null; 
-        const dC = new Date(cd); dC.setHours(0,0,0,0);
+        const dateStr = jktFmt.format(cd);
+        let tt: any = null;
+        const dC = new Date(cd); dC.setHours(0, 0, 0, 0);
         const cTs = dC.getTime();
         const ep = emp.employeepattern?.find((p: any) => {
-           const sTs = new Date(p.startDate).setHours(0,0,0,0);
-           const eTs = p.endDate ? new Date(p.endDate).setHours(23,59,59,999) : Infinity;
+           const sTs = new Date(p.startDate).setHours(0, 0, 0, 0);
+           const eTs = p.endDate ? new Date(p.endDate).setHours(23, 59, 59, 999) : Infinity;
            return cTs >= sTs && cTs <= eTs;
         });
 
         if (ep && ep.shiftpattern) {
-          const dS = new Date(ep.startDate); dS.setHours(0,0,0,0);
+          const dS = new Date(ep.startDate); dS.setHours(0, 0, 0, 0);
           const diff = Math.round((cTs - dS.getTime()) / 86400000);
           if (diff >= 0) {
             const dayOffset = (dS.getDay() + 6) % 7;
             const dy = ((diff + dayOffset) % ep.shiftpattern.cycleDays) + 1;
-            const ci = ep.shiftpattern.shiftpatternitem.find(i => i.dayNumber === dy);
+            const ci = ep.shiftpattern.shiftpatternitem.find((i: any) => i.dayNumber === dy);
             if (ci?.timetable) tt = ci.timetable;
           }
         }
 
         // CHECK HOLIDAY
-        const dayHoliday = hList.find(h => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(h.date) === dateStr);
+        const dayHoliday = holidayByDate.get(dateStr);
         if (dayHoliday) {
           let isAffected = false;
           if (dayHoliday.isGlobal) isAffected = true;
           else {
-            const roles = (dayHoliday.affectedRoles || '').split(',').map(s => s.trim().toUpperCase());
-            const patterns = (dayHoliday.affectedPatterns || '').split(',').map(s => s.trim());
+            const roles = (dayHoliday.affectedRoles || '').split(',').map((s: string) => s.trim().toUpperCase());
+            const patterns = (dayHoliday.affectedPatterns || '').split(',').map((s: string) => s.trim());
             const currentPatternId = String(emp.employeepattern[0]?.patternId || '');
-
             if (roles.includes(String(emp.role || '').toUpperCase()) || patterns.includes(currentPatternId)) {
               isAffected = true;
             }
@@ -1870,109 +1917,56 @@ app.get('/api/reports/monthly', async (req, res) => {
         if (tt) {
           totalWorkDays++;
           const isO = tt.jamPulang < tt.jamMasuk;
-          const getJktTime = (date: Date) => {
-            const s = date.toLocaleString('en-GB', { timeZone: 'Asia/Jakarta' });
-            const match = s.match(/(\d+)\/(\d+)\/(\d+), (\d+):(\d+)/);
-            if (!match) return "00:00";
-            const [, dd, mm, yyyy, hh, mi] = match;
-            const isOld = parseInt(yyyy) < 2026 || (parseInt(yyyy) === 2026 && parseInt(mm) < 5);
-            return isOld ? `${date.getUTCHours().toString().padStart(2, '0')}:${date.getUTCMinutes().toString().padStart(2, '0')}` : `${hh}:${mi}`;
-          };
+          const dayLogs = byDay.get(dateStr) || [];
+          const iLog = findBestLog(dayLogs, tt.mulaiScanIn || '00:00', tt.akhirScanIn || '23:59', dateStr, true);
 
-          const getJktDateStr = (date: Date) => {
-            const s = date.toLocaleString('en-GB', { timeZone: 'Asia/Jakarta' });
-            const match = s.match(/(\d+)\/(\d+)\/(\d+)/);
-            if (!match) return "2026-01-01";
-            const [, dd, mm, yyyy] = match;
-            const isOld = parseInt(yyyy) < 2026 || (parseInt(yyyy) === 2026 && parseInt(mm) < 5);
-            return isOld ? `${yyyy}-${(date.getUTCMonth()+1).toString().padStart(2,'0')}-${date.getUTCDate().toString().padStart(2,'0')}` : `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`;
-          };
-
-          const findBestLog = (logList: any[], startRange: string, endRange: string, isEarliest: boolean) => {
-            const matches = logList.filter(l => {
-              const hRaw = l.timestamp.getUTCHours().toString().padStart(2, '0');
-              const mRaw = l.timestamp.getUTCMinutes().toString().padStart(2, '0');
-              const timeRaw = `${hRaw}:${mRaw}`;
-              
-              const hJkt = new Date(l.timestamp.getTime() + 7 * 60 * 60 * 1000).getUTCHours().toString().padStart(2, '0');
-              const mJkt = new Date(l.timestamp.getTime() + 7 * 60 * 60 * 1000).getUTCMinutes().toString().padStart(2, '0');
-              const timeJkt = `${hJkt}:${mJkt}`;
-
-              const d = new Date(l.timestamp.getTime() + 7 * 60 * 60 * 1000);
-              const yyyyL = d.getUTCFullYear();
-              const mmL = (d.getUTCMonth() + 1).toString().padStart(2, '0');
-              const ddL = d.getUTCDate().toString().padStart(2, '0');
-              const dateJkt = `${yyyyL}-${mmL}-${ddL}`;
-
-              return dateJkt === dateStr && (timeJkt >= startRange && timeJkt <= endRange);
-            });
-
-            if (matches.length === 0) return null;
-            
-            return matches.sort((a, b) => isEarliest ? a.timestamp.getTime() - b.timestamp.getTime() : b.timestamp.getTime() - a.timestamp.getTime())[0];
-          };
-
-          const iLog = findBestLog(logs.filter(l => getJktDateStr(l.timestamp) === dateStr), tt.mulaiScanIn || '00:00', tt.akhirScanIn || '23:59', true);
-
-          const nextDayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date(cd.getTime() + 86400000));
-          const targetOutLogs = isO ? logs.filter(l => getJktDateStr(l.timestamp) === nextDayStr) : logs.filter(l => getJktDateStr(l.timestamp) === dateStr);
-          
-          const oLog = findBestLog(targetOutLogs, tt.mulaiScanOut || '00:00', tt.akhirScanOut || '23:59', false);
+          const nextDayStr = jktFmt.format(new Date(cd.getTime() + 86400000));
+          const outTargetStr = isO ? nextDayStr : dateStr;
+          const targetOutLogs = byDay.get(outTargetStr) || [];
+          // PERBAIKAN: sebelumnya findBestLog selalu mencocokkan tanggal hari
+          // berjalan (dateStr), sehingga untuk shift malam (pulang keesokan
+          // hari) oLog SELALU null — pegawai shift malam kena denda pulang
+          // cepat 240 menit/hari dan durasinya tidak pernah terhitung.
+          // Sekarang target tanggal pulang dipakai dengan benar.
+          const oLog = findBestLog(targetOutLogs, tt.mulaiScanOut || '00:00', tt.akhirScanOut || '23:59', outTargetStr, false);
 
           if (iLog || oLog) {
             totalDays++;
             if (iLog) {
-              const hRaw = iLog.timestamp.getUTCHours();
-              const mRaw = iLog.timestamp.getUTCMinutes();
-              const hJkt = new Date(iLog.timestamp.getTime() + 7 * 60 * 60 * 1000).getUTCHours();
-              const mJkt = new Date(iLog.timestamp.getTime() + 7 * 60 * 60 * 1000).getUTCMinutes();
-              
-              const [hTarget, mTarget] = tt.jamMasuk.split(/[:.]/).map(Number);
-              
-              // Pilih mana yang lebih dekat ke jam masuk (Raw vs Jkt)
-              const diffRaw = Math.abs((hRaw * 60 + mRaw) - (hTarget * 60 + mTarget));
-              const diffJkt = Math.abs((hJkt * 60 + mJkt) - (hTarget * 60 + mTarget));
-              
-              const bestDiff = Math.min(diffRaw, diffJkt);
-              const bestMinutes = diffRaw < diffJkt ? (hRaw * 60 + mRaw) : (hJkt * 60 + mJkt);
-              
-              const d1 = bestMinutes - (hTarget * 60 + mTarget);
+              const hTarget = hm(tt.jamMasuk);
+              const diffRaw = Math.abs(iLog._rawMins - hTarget);
+              const diffJkt = Math.abs(iLog._jktMins - hTarget);
+              const bestMinutes = diffRaw < diffJkt ? iLog._rawMins : iLog._jktMins;
+              const d1 = bestMinutes - hTarget;
               if (d1 > 0) totalLate += d1;
             } else if (oLog && pL > 0) totalLate += pL;
 
             if (oLog) {
-              const hRaw = oLog.timestamp.getUTCHours();
-              const mRaw = oLog.timestamp.getUTCMinutes();
-              const hJkt = new Date(oLog.timestamp.getTime() + 7 * 60 * 60 * 1000).getUTCHours();
-              const mJkt = new Date(oLog.timestamp.getTime() + 7 * 60 * 60 * 1000).getUTCMinutes();
-              
-              const [hTarget, mTarget] = tt.jamPulang.split(/[:.]/).map(Number);
+              const hTarget = hm(tt.jamPulang);
               const hTargetA = isO ? hTarget + 24 : hTarget;
-
-              const diffRaw = Math.abs(((isO && hRaw < 12 ? hRaw + 24 : hRaw) * 60 + mRaw) - (hTargetA * 60 + mTarget));
-              const diffJkt = Math.abs(((isO && hJkt < 12 ? hJkt + 24 : hJkt) * 60 + mJkt) - (hTargetA * 60 + mTarget));
-              
-              const bestMinutes = diffRaw < diffJkt ? (isO && hRaw < 12 ? hRaw + 24 : hRaw) * 60 + mRaw : (isO && hJkt < 12 ? hJkt + 24 : hJkt) * 60 + mJkt;
-              
-              const d2 = (hTargetA * 60 + mTarget) - bestMinutes;
+              const rawAdj = (isO && oLog.timestamp.getUTCHours() < 12) ? oLog._rawMins + 24 * 60 : oLog._rawMins;
+              const jktHour = Math.floor(oLog._jktMins / 60);
+              const jktAdj = (isO && jktHour < 12) ? oLog._jktMins + 24 * 60 : oLog._jktMins;
+              const diffRaw = Math.abs(rawAdj - hTargetA);
+              const diffJkt = Math.abs(jktAdj - hTargetA);
+              const bestMinutes = diffRaw < diffJkt ? rawAdj : jktAdj;
+              const d2 = hTargetA - bestMinutes;
               if (d2 > 0) totalEarly += d2;
             } else if (iLog && pE > 0) totalEarly += pE;
 
             if (iLog && oLog) {
-              // Durasi juga harus konsisten
               const dur = Math.round((new Date(oLog.timestamp).getTime() - new Date(iLog.timestamp).getTime()) / 60000);
               if (dur > 0) totalWorkDuration += dur;
             }
           }
         }
-        // JIKA TT NULL (Bukan hari kerja), diabaikan sesuai permintaan
         cd.setDate(cd.getDate() + 1);
       }
-      results.push({ 
-        employeeId: emp.id, 
-        employeeName: emp.name, 
-        totalDays, 
-        totalLate, 
+      results.push({
+        employeeId: emp.id,
+        employeeName: emp.name,
+        totalDays,
+        totalLate,
         totalEarly,
         totalWorkDays,
         totalAbsent: Math.max(0, totalWorkDays - totalDays),
