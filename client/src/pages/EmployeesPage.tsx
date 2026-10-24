@@ -1,9 +1,68 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { format } from 'date-fns';
+import { format, differenceInCalendarDays, startOfMonth, endOfMonth } from 'date-fns';
+import { id as localeId } from 'date-fns/locale';
 import toast, { Toaster } from 'react-hot-toast';
 
 const API_URL = '/api';
+
+// ---------- Riwayat Shift (helper murni) ----------
+const dayStart = (d: any) => {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+};
+
+// Periode urut kronologis (data API datang urut terbaru dulu).
+const sortedPeriods = (emp: any) =>
+  [...(emp?.assignedPatterns || [])].sort(
+    (a: any, b: any) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime() || a.id - b.id
+  );
+
+// Periode aktif = yang belum berakhir; bila ada lebih dari satu, yang startDate-nya paling akhir menang.
+const activePeriod = (emp: any) => {
+  const open = (emp?.assignedPatterns || []).filter((p: any) => !p.endDate);
+  open.sort((a: any, b: any) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime() || b.id - a.id);
+  return open[0] || null;
+};
+
+const periodDays = (p: any, today: Date) =>
+  differenceInCalendarDays(dayStart(p.endDate || today), dayStart(p.startDate)) + 1;
+
+// Pola yang berlaku pada satu bulan: irisan tiap periode dengan bulan itu.
+// Periode aktif dihitung s.d. hari ini (bukan s.d. akhir bulan).
+const patternsInMonth = (periods: any[], monthStr: string, today: Date) => {
+  if (!/^\d{4}-\d{2}$/.test(monthStr)) return [];
+  const [y, m] = monthStr.split('-').map(Number);
+  const mStart = startOfMonth(new Date(y, m - 1, 1));
+  const mEnd = endOfMonth(new Date(y, m - 1, 1));
+  const out: any[] = [];
+  for (const p of periods) {
+    const pStart = dayStart(p.startDate);
+    const pEnd = dayStart(p.endDate || today);
+    const from = pStart > mStart ? pStart : mStart;
+    const to = pEnd < mEnd ? pEnd : mEnd;
+    if (from <= to) {
+      out.push({ period: p, from, to, days: differenceInCalendarDays(to, from) + 1 });
+    }
+  }
+  return out.sort((a: any, b: any) => a.from.getTime() - b.from.getTime());
+};
+
+const monthLabel = (monthStr: string) => {
+  if (!/^\d{4}-\d{2}$/.test(monthStr)) return '';
+  return format(new Date(`${monthStr}-02`), 'MMMM yyyy', { locale: localeId });
+};
+
+// Label bulan-bulan yang direntang satu periode, mis. "Agustus–September 2026".
+const periodMonthsLabel = (p: any) => {
+  const s = new Date(p.startDate);
+  const e = p.endDate ? new Date(p.endDate) : new Date();
+  const sLabel = format(s, 'MMMM yyyy', { locale: localeId });
+  const eLabel = format(e, 'MMMM yyyy', { locale: localeId });
+  if (sLabel === eLabel) return sLabel;
+  return `${format(s, 'MMMM', { locale: localeId })}–${eLabel}`;
+};
 
 const EmployeesPage = () => {
   const [employees, setEmployees] = useState<any[]>([]);
@@ -37,6 +96,13 @@ const EmployeesPage = () => {
     patternId: '',
     startDate: format(new Date(), 'yyyy-MM-dd')
   });
+
+  // Panel Riwayat Shift
+  const [historyEmp, setHistoryEmp] = useState<any | null>(null);
+  const [selectedPeriodId, setSelectedPeriodId] = useState<number | null>(null);
+  const [lookupMonth, setLookupMonth] = useState(format(new Date(), 'yyyy-MM'));
+  const [correctPatternId, setCorrectPatternId] = useState('');
+  const [correctConfirm, setCorrectConfirm] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -154,6 +220,41 @@ const EmployeesPage = () => {
       fetchData();
     } catch (err) {
       toast.error('Gagal memproses plotting massal');
+    }
+  };
+
+  const openHistory = (emp: any) => {
+    setHistoryEmp(emp);
+    const active = activePeriod(emp);
+    const periods = sortedPeriods(emp);
+    setSelectedPeriodId(active ? active.id : (periods.length > 0 ? periods[periods.length - 1].id : null));
+    setLookupMonth(format(new Date(), 'yyyy-MM'));
+    setCorrectPatternId('');
+    setCorrectConfirm(false);
+  };
+
+  const closeHistory = () => {
+    setHistoryEmp(null);
+    setSelectedPeriodId(null);
+    setCorrectPatternId('');
+    setCorrectConfirm(false);
+  };
+
+  const handleCorrectPeriod = async () => {
+    if (!historyEmp || !selectedPeriodId || !correctPatternId) return;
+    try {
+      await axios.put(`${API_URL}/employees/${historyEmp.id}/patterns/${selectedPeriodId}`, {
+        patternId: parseInt(correctPatternId)
+      });
+      toast.success('Periode shift berhasil dikoreksi');
+      const res = await axios.get(`${API_URL}/employees`);
+      setEmployees(res.data);
+      const fresh = res.data.find((e: any) => e.id === historyEmp.id);
+      if (fresh) setHistoryEmp(fresh);
+      setCorrectPatternId('');
+      setCorrectConfirm(false);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Gagal mengoreksi periode shift');
     }
   };
 
@@ -364,20 +465,32 @@ const EmployeesPage = () => {
                      </div>
                   </td>
                   <td className="mansaba-td">
-                     <div className="flex flex-col gap-1.5 min-w-[140px] max-h-32 overflow-y-auto custom-scrollbar pr-2">
-                        {emp.assignedPatterns && emp.assignedPatterns.length > 0 ? (
-                           emp.assignedPatterns.map((ap: any, i: number) => (
-                              <div key={i} className={`flex flex-col p-2 rounded-lg border transition-all ${!ap.endDate ? 'bg-blue-50 border-blue-200 shadow-sm shadow-blue-500/5' : 'bg-slate-50 border-slate-100 opacity-60 hover:opacity-100'}`}>
-                                 <span className={`text-xs font-semibold ${!ap.endDate ? 'text-blue-700' : 'text-slate-600'}`}>{ap.pattern.name}</span>
-                                 <span className="text-[9px] font-bold uppercase tracking-wider mt-0.5 text-slate-400">
-                                    {format(new Date(ap.startDate), 'dd MMM yy')} {ap.endDate ? `- ${format(new Date(ap.endDate), 'dd MMM yy')}` : '- Aktif'}
-                                 </span>
-                              </div>
-                           ))
-                        ) : (
-                           <span className="text-xs text-rose-400 italic font-semibold">Belum dipasang pola</span>
-                        )}
-                     </div>
+                     {(() => {
+                        const periods = emp.assignedPatterns || [];
+                        const active = activePeriod(emp);
+                        return (
+                           <div className="flex flex-col gap-1.5 min-w-[160px]">
+                              {active ? (
+                                 <div className="flex flex-col p-2 rounded-lg border bg-blue-50 border-blue-200">
+                                    <span className="text-xs font-semibold text-blue-700">{active.pattern.name}</span>
+                                    <span className="text-[9px] font-bold uppercase tracking-wider mt-0.5 text-slate-400">
+                                       {format(new Date(active.startDate), 'dd MMM yy')} - Aktif
+                                    </span>
+                                 </div>
+                              ) : (
+                                 <span className="text-xs text-rose-400 italic font-semibold">Belum dipasang pola</span>
+                              )}
+                              {periods.length > 0 && (
+                                 <button
+                                    onClick={() => openHistory(emp)}
+                                    className="text-left text-[11px] font-bold text-blue-600 hover:text-blue-800 transition-colors"
+                                 >
+                                    <i className="fa-solid fa-clock-rotate-left mr-1"></i> Riwayat ({periods.length} periode)
+                                 </button>
+                              )}
+                           </div>
+                        );
+                     })()}
                   </td>
                   <td className="mansaba-td text-right">
                      <div className="flex items-center justify-end gap-1">
@@ -603,6 +716,148 @@ const EmployeesPage = () => {
             </div>
          </div>
       )}
+
+      {/* MODAL RIWAYAT SHIFT */}
+      {historyEmp && (() => {
+         const periods = sortedPeriods(historyEmp);
+         const active = activePeriod(historyEmp);
+         const today = new Date();
+         const totalDays = periods.reduce((acc: number, p: any) => acc + periodDays(p, today), 0);
+         const selected = periods.find((p: any) => p.id === selectedPeriodId) || null;
+         const lookup = patternsInMonth(periods, lookupMonth, today);
+         const correctPattern = patterns.find((p: any) => String(p.id) === correctPatternId);
+         return (
+         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+            <div className="bg-white rounded-xl shadow-lg w-full max-w-2xl p-8 relative max-h-[90vh] overflow-y-auto custom-scrollbar">
+               <button onClick={closeHistory} className="absolute top-6 right-6 text-slate-400 hover:text-slate-600">
+                  <i className="fa-solid fa-xmark text-xl"></i>
+               </button>
+
+               <div className="flex items-center gap-4 mb-6 pb-6 border-b border-slate-100 pr-8">
+                  <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
+                     <i className="fa-solid fa-clock-rotate-left text-xl"></i>
+                  </div>
+                  <div>
+                     <h3 className="text-xl font-bold text-slate-800">Riwayat Shift</h3>
+                     <p className="text-sm text-slate-500">{historyEmp.name} • ID {historyEmp.id} • {historyEmp.role}</p>
+                  </div>
+               </div>
+
+               {active ? (
+                  <div className="flex flex-wrap items-center gap-2 mb-6 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
+                     <span className="text-xs font-bold uppercase tracking-wider text-blue-600">Berlaku hari ini</span>
+                     <span className="text-sm font-bold text-blue-800">{active.pattern.name}</span>
+                     <span className="text-xs text-blue-600">sejak {format(new Date(active.startDate), 'dd MMM yyyy', { locale: localeId })}</span>
+                  </div>
+               ) : (
+                  <div className="mb-6 text-sm text-rose-500 italic font-semibold">Belum dipasang pola</div>
+               )}
+
+               {/* LINIMASA */}
+               {periods.length > 0 && (
+                  <div className="mb-6">
+                     <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Linimasa Periode</p>
+                     <div className="flex w-full gap-1">
+                        {periods.map((p: any) => {
+                           const days = periodDays(p, today);
+                           const pct = totalDays > 0 ? (days / totalDays) * 100 : 0;
+                           const isSel = p.id === selectedPeriodId;
+                           return (
+                              <button
+                                 key={p.id}
+                                 onClick={() => setSelectedPeriodId(p.id)}
+                                 title={`${p.pattern.name} • ${format(new Date(p.startDate), 'dd MMM yyyy', { locale: localeId })}${p.endDate ? ` – ${format(new Date(p.endDate), 'dd MMM yyyy', { locale: localeId })}` : ' – Aktif'} • ${days} hari`}
+                                 className={`rounded-lg px-2 py-2 text-left transition-all min-w-0 ${!p.endDate ? 'bg-blue-600 text-white' : isSel ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                                 style={{ width: `${Math.max(pct, 12)}%` }}
+                              >
+                                 <span className="block text-[11px] font-bold truncate">{p.pattern.name}</span>
+                                 <span className="block text-[9px] opacity-80 truncate">{days} hari</span>
+                              </button>
+                           );
+                        })}
+                     </div>
+                     {selected && (
+                        <div className="mt-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-sm">
+                           <span className="font-bold text-slate-800">{selected.pattern.name}</span>
+                           <span className="text-slate-500"> • {format(new Date(selected.startDate), 'dd MMM yyyy', { locale: localeId })} – {selected.endDate ? format(new Date(selected.endDate), 'dd MMM yyyy', { locale: localeId }) : 'Aktif'}</span>
+                           <span className="text-slate-500"> • {periodDays(selected, today)} hari</span>
+                           {!selected.endDate && <span className="ml-2 text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-700">Aktif sekarang</span>}
+                        </div>
+                     )}
+                  </div>
+               )}
+
+               {/* LOOKUP BULAN */}
+               <div className="mb-6">
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Shift pada bulan</p>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                     <input type="month" className="mansaba-input sm:w-48" value={lookupMonth} onChange={e => setLookupMonth(e.target.value)} />
+                     <div className="flex-1 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
+                        {lookup.length === 0 ? (
+                           <span className="text-sm text-slate-500 italic">Tidak ada pola pada {monthLabel(lookupMonth) || 'bulan tersebut'}</span>
+                        ) : (
+                           <div className="space-y-1">
+                              {lookup.map((row: any, i: number) => (
+                                 <div key={i} className="text-sm">
+                                    <span className="font-bold text-slate-800">{row.period.pattern.name}</span>
+                                    <span className="text-slate-500"> • {format(row.from, 'dd MMM yyyy', { locale: localeId })} – {format(row.to, 'dd MMM yyyy', { locale: localeId })} ({row.days} hari)</span>
+                                    {!row.period.endDate && <span className="ml-2 text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-700">Berjalan</span>}
+                                 </div>
+                              ))}
+                           </div>
+                        )}
+                     </div>
+                  </div>
+               </div>
+
+               {/* KOREKSI PERIODE */}
+               {selected && (
+                  <div className="border-t border-slate-100 pt-6">
+                     <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Koreksi periode lampau</p>
+                     <p className="text-xs text-slate-500 mb-3">
+                        Mengganti pola pada periode <span className="font-bold text-slate-700">{selected.pattern.name}</span> ({format(new Date(selected.startDate), 'dd MMM yyyy', { locale: localeId })} – {selected.endDate ? format(new Date(selected.endDate), 'dd MMM yyyy', { locale: localeId }) : 'Aktif'}).
+                        Tanggal periode tidak berubah; hanya isinya yang ditukar.
+                     </p>
+                     <div className="flex flex-col sm:flex-row gap-3 mb-3">
+                        <select className="mansaba-input flex-1" value={correctPatternId} onChange={e => { setCorrectPatternId(e.target.value); setCorrectConfirm(false); }}>
+                           <option value="">Pilih pola pengganti…</option>
+                           {patterns.map((p: any) => (
+                              <option key={p.id} value={String(p.id)}>{p.name} (Siklus {p.cycleDays} hari)</option>
+                           ))}
+                        </select>
+                     </div>
+                     {correctPattern && correctPattern.id !== selected.patternId && (
+                        <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 mb-3 text-sm">
+                           <p className="text-slate-700">
+                              <span className="font-bold">{selected.pattern.name}</span> → <span className="font-bold">{correctPattern.name}</span>
+                              <span className="text-slate-500"> • {format(new Date(selected.startDate), 'dd MMM yyyy', { locale: localeId })} – {selected.endDate ? format(new Date(selected.endDate), 'dd MMM yyyy', { locale: localeId }) : 'Aktif'} (tanggal tidak berubah)</span>
+                           </p>
+                           <p className="text-amber-700 font-semibold mt-1">
+                              Perhatian: rekap &amp; honor {periodMonthsLabel(selected)} akan berubah saat dihitung ulang.
+                           </p>
+                           <label className="flex items-start gap-2 mt-2 cursor-pointer">
+                              <input type="checkbox" className="mt-0.5" checked={correctConfirm} onChange={e => setCorrectConfirm(e.target.checked)} />
+                              <span className="text-xs text-slate-600">Saya mengerti dampaknya dan ingin mengganti pola periode ini.</span>
+                           </label>
+                        </div>
+                     )}
+                     <div className="flex justify-end gap-3">
+                        <button type="button" onClick={closeHistory} className="px-5 py-2.5 rounded-lg text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200">Tutup</button>
+                        <button
+                           type="button"
+                           onClick={handleCorrectPeriod}
+                           disabled={!correctPattern || correctPattern.id === selected.patternId || !correctConfirm}
+                           className="mansaba-btn-primary px-6 py-2.5 disabled:opacity-50"
+                        >
+                           Ganti Pola Periode
+                        </button>
+                     </div>
+                  </div>
+               )}
+            </div>
+         </div>
+         );
+      })}
     </div>
   );
 };
