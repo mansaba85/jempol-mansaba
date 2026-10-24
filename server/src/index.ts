@@ -580,12 +580,14 @@ app.get('/api/patterns', async (req, res) => {
 app.post('/api/patterns', async (req, res) => {
   const { name, category, cycleDays, startDate, items } = req.body;
   try {
-    const maxDay = items && items.length > 0 ? Math.max(...items.map((it: any) => parseInt(it.dayNumber) || 0)) : 0;
     const pattern = await prisma.shiftpattern.create({
       data: {
         name,
         category,
-        cycleDays: Math.max(parseInt(cycleDays) || 0, maxDay),
+        // cycleDays dihormati apa adanya: pola lokal memakai idiom dua blok
+        // mingguan (14 item) dengan siklus 7 — item di luar siklus adalah
+        // blok alternatif yang memang tidak dievaluasi.
+        cycleDays: parseInt(cycleDays) || 7,
         startDate: startDate ? new Date(startDate) : null,
         ...(items && items.length > 0 ? {
           shiftpatternitem: {
@@ -615,12 +617,6 @@ app.put('/api/patterns/:id', async (req, res) => {
       const todayStart = new Date(); todayStart.setHours(0,0,0,0);
       if (firstUse && new Date(firstUse.startDate) < todayStart) {
         return res.status(409).json({ error: 'Pola ini sudah dipakai penugasan sejak ' + new Date(firstUse.startDate).toISOString().slice(0,10) + '. Mengubah siklus/tanggal mulainya akan mengubah penilaian bulan-bulan sebelumnya — buat pola baru untuk perubahan.' });
-      }
-    }
-    if (cycleChanged) {
-      const maxDay = existingPat.shiftpatternitem.reduce((m: number, it: any) => Math.max(m, it.dayNumber), 0);
-      if (parseInt(cycleDays) < maxDay) {
-        return res.status(409).json({ error: 'cycleDays tidak boleh lebih kecil dari hari item terbesar (' + maxDay + ').' });
       }
     }
     const pattern = await prisma.shiftpattern.update({
@@ -657,12 +653,6 @@ app.post('/api/patterns/:id/items', async (req, res) => {
           timetableId: parseInt(it.timetableId)
         }))
       });
-      // Siklus harus menjangkau item terjauh, jika tidak item itu tidak pernah terpilih.
-      const maxDay = validItems.reduce((m: number, it: any) => Math.max(m, parseInt(it.dayNumber) || 0), 0);
-      const pat: any = await tx.shiftpattern.findUnique({ where: { id } });
-      if (pat && maxDay > pat.cycleDays) {
-        await tx.shiftpattern.update({ where: { id }, data: { cycleDays: maxDay } });
-      }
     });
     res.json({ success: true });
   } catch (error) { res.status(500).json({ error: 'Gagal simpan item pola' }); }

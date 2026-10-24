@@ -11,10 +11,13 @@
  *     baris valid (pegawai + pola + tanggal mulai sama) -> baris invalid DIHAPUS.
  *  2. Baris invalid lain -> endDate diisi sehari sebelum periode berikutnya
  *     mulai (atau dilaporkan untuk ditinjau manual bila tidak bisa ditentukan).
- *  3. shiftpattern.cycleDays yang lebih kecil dari dayNumber item terbesar
- *     (item di luar siklus tidak pernah terpilih rumus) -> dinaikkan.
  * Tumpang tindih antar baris VALID hanya DILAPORKAN, tidak diubah otomatis,
  * karena memilih salah satunya adalah keputusan manusia.
+ * cycleDays SENGAJA tidak disentuh: pola lokal memakai idiom dua blok
+ * mingguan (mis. 14 item dengan siklus 7 — blok kedua adalah alternatif yang
+ * tidak dievaluasi). Verifikasi terhadap cetakan honor September 2026
+ * membuktikan menaikkan cycleDays justru merusak penilaian yang benar;
+ * item di luar siklus hanya dicatat sebagai catatan informasi.
  *
  * Pemakaian (dari folder server, DATABASE_URL terisi / .env ada):
  *   npx tsx scripts/fix-shift-periods.ts           # dry-run: hanya laporan
@@ -22,7 +25,7 @@
  */
 import { pathToFileURL } from 'url';
 // PrismaClient diimpor dinamis di dalam main() agar fungsi perencana murni
-// (planPeriodRepairs/planCycleFixes) bisa diimpor & diuji tanpa client ter-generate.
+// (planPeriodRepairs) bisa diimpor & diuji tanpa client ter-generate.
 
 export interface PeriodRow {
   id: number;
@@ -35,7 +38,6 @@ export interface PeriodRow {
 export interface RepairPlan {
   deletes: { id: number; reason: string }[];
   updates: { id: number; endDate: string; reason: string }[];
-  cycleFixes: { patternId: number; from: number; to: number }[];
   warnings: string[];
 }
 
@@ -105,10 +107,11 @@ export function planPeriodRepairs(rows: PeriodRow[]): Pick<RepairPlan, 'deletes'
   return { deletes, updates, warnings };
 }
 
-export function planCycleFixes(patterns: { id: number; cycleDays: number; maxDay: number }[]): RepairPlan['cycleFixes'] {
+export function cycleNotes(patterns: { id: number; name: string; cycleDays: number; maxDay: number }[]): string[] {
+  // Informasi saja — TIDAK diubah: pola dua blok mingguan memang disengaja.
   return patterns
     .filter(p => p.maxDay > p.cycleDays)
-    .map(p => ({ patternId: p.id, from: p.cycleDays, to: p.maxDay }));
+    .map(p => `pola ${p.id} (${p.name}): berisi item sampai hari ke-${p.maxDay} tetapi cycleDays ${p.cycleDays} — item di luar siklus tidak dievaluasi (idiom blok mingguan; dibiarkan apa adanya).`);
 }
 
 async function main() {
@@ -127,8 +130,9 @@ async function main() {
     const plan = planPeriodRepairs(periodRows);
 
     const patterns = await prisma.shiftpattern.findMany({ include: { shiftpatternitem: true } });
-    const cycleFixes = planCycleFixes(patterns.map(p => ({
+    const notes = cycleNotes(patterns.map(p => ({
       id: p.id,
+      name: p.name,
       cycleDays: p.cycleDays,
       maxDay: p.shiftpatternitem.reduce((m, it) => Math.max(m, it.dayNumber), 0)
     })));
@@ -139,19 +143,18 @@ async function main() {
     plan.deletes.forEach(d => console.log('  -', d.reason));
     console.log(`\nUBAH endDate (${plan.updates.length}):`);
     plan.updates.forEach(u => console.log('  -', u.reason));
-    console.log(`\nPERBAIKI cycleDays (${cycleFixes.length}):`);
-    cycleFixes.forEach(c => console.log(`  - pola ${c.patternId}: cycleDays ${c.from} -> ${c.to}`));
+    console.log(`\nCATATAN SIKLUS (${notes.length}):`);
+    notes.forEach(n => console.log('  ~', n));
     console.log(`\nPERINGATAN (${plan.warnings.length}):`);
     plan.warnings.forEach(w => console.log('  !', w));
 
     if (!apply) {
-      console.log('\nDry-run selesai. Jalankan dengan --apply untuk menerapkan HAPUS/UBAH/PERBAIKI di atas.');
+      console.log('\nDry-run selesai. Jalankan dengan --apply untuk menerapkan HAPUS/UBAH di atas.');
       return;
     }
     await prisma.$transaction(async (tx) => {
       for (const d of plan.deletes) await tx.employeepattern.delete({ where: { id: d.id } });
       for (const u of plan.updates) await tx.employeepattern.update({ where: { id: u.id }, data: { endDate: new Date(u.endDate + 'T00:00:00.000Z') } });
-      for (const c of cycleFixes) await tx.shiftpattern.update({ where: { id: c.patternId }, data: { cycleDays: c.to } });
     });
     console.log('\nPerbaikan diterapkan.');
   } finally {
