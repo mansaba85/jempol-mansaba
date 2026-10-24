@@ -15,7 +15,11 @@ import jwt from 'jsonwebtoken';
 const upload = multer({ dest: 'uploads/' });
 const prisma = new PrismaClient();
 const port = process.env.PORT || 3001;
-const JWT_SECRET = process.env.JWT_SECRET || 'mansaba_super_secret_1985';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET belum diisi di environment. Server berhenti.');
+  process.exit(1);
+}
 
 const app = express();
 app.use(cors());
@@ -429,21 +433,45 @@ app.use('/api', (req: any, res: any, next: any) => {
   authenticateToken(req, res, next);
 });
 
-// Auto-seed Initial Admin
+// Otorisasi berbasis role: token EMPLOYEE hanya boleh membaca laporan kehadiran dirinya sendiri.
+// Semua endpoint /api lain khusus ADMIN (termasuk backup, restore, dan hapus data).
+app.use('/api', (req: any, res: any, next: any) => {
+  const publicRoutes = ['/login', '/login/employee', '/settings/public'];
+  if (publicRoutes.includes(req.path)) return next();
+  const u = (req as any).user;
+  if (!u) return res.status(401).json({ message: 'Akses ditolak. Silakan login.' });
+  if (u.role === 'ADMIN') return next();
+  if (
+    u.role === 'EMPLOYEE' &&
+    req.method === 'GET' &&
+    req.path === '/reports/detailed' &&
+    String(req.query.employeeId) === String(u.id)
+  ) return next();
+  return res.status(403).json({ message: 'Akses ditolak. Role Anda tidak memiliki izin untuk sumber daya ini.' });
+});
+
+// Auto-seed Initial Admin — kredensial WAJIB dari environment (ADMIN_USERNAME & ADMIN_PASSWORD).
+// Jika env tidak diisi, seed dilewati. Admin yang sudah ada di database tidak terpengaruh.
 const seedAdmin = async () => {
   try {
+    const username = process.env.ADMIN_USERNAME;
+    const password = process.env.ADMIN_PASSWORD;
+    if (!username || !password) {
+      console.warn('⚠️ ADMIN_USERNAME/ADMIN_PASSWORD tidak diisi — seed admin dilewati.');
+      return;
+    }
     const adminExists = await prisma.user.findUnique({
-      where: { username: 'manubyp' }
+      where: { username }
     });
     if (!adminExists) {
       await prisma.user.create({
         data: {
-          username: 'manubyp',
-          password: 'Mansaba1985',
+          username,
+          password,
           role: 'ADMIN'
         }
       });
-      console.log('✅ Admin user "manubyp" seeded successfully.');
+      console.log(`✅ Admin user "${username}" seeded successfully.`);
     }
   } catch (error) {
     console.error('❌ Failed to seed admin user:', error);

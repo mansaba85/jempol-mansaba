@@ -9,8 +9,8 @@ services:
       - "8085:3001"
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=mysql://mansaba_user:mansaba_secret@db:3306/mansaba_db
-      - JWT_SECRET=mansaba_super_secret_1985
+      - DATABASE_URL=${DATABASE_URL:?DATABASE_URL wajib diisi di environment stack}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET wajib diisi di environment stack}
       - TZ=Asia/Jakarta
     depends_on:
       - db
@@ -21,13 +21,11 @@ services:
     image: mysql:8.0
     container_name: mansaba_db
     restart: unless-stopped
-    ports:
-      - "3385:3306"
     environment:
       - MYSQL_DATABASE=mansaba_db
       - MYSQL_USER=mansaba_user
-      - MYSQL_PASSWORD=mansaba_secret
-      - MYSQL_ROOT_PASSWORD=mansaba_root_secret
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:?MYSQL_PASSWORD wajib diisi di environment stack}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD wajib diisi di environment stack}
       - TZ=Asia/Jakarta
     volumes:
       - mansaba_db_data:/var/lib/mysql
