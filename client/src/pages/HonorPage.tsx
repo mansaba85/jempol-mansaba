@@ -25,6 +25,7 @@ const HonorPage = () => {
   const [summary, setSummary] = useState<any>(null);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [settings, setSettings] = useState<any>({});
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -44,10 +45,13 @@ const HonorPage = () => {
       }
 
       const newRates = { ...rates };
+      const sMap: any = {};
       setRes.data.forEach((s: any) => {
         if (s.key in newRates) (newRates as any)[s.key] = s.value;
+        sMap[s.key] = s.value;
       });
       setRates(newRates);
+      setSettings(sMap);
     } catch (err) {
       toast.error('Gagal mengambil data honor transport');
       setHonorData([]);
@@ -120,10 +124,10 @@ const HonorPage = () => {
       </head>
       <body>
           <div class="kop-surat">
-              <img src="/logo.png" onerror="this.style.display='none'" />
+              <img src="${settings.school_logo || '/logo.png'}" onerror="this.style.display='none'" />
               <div class="teks">
-                 <h2>MA NU 01 BANYUPUTIH</h2>
-                 <p>Alamat : Jl. Lapangan 9A Banyuputih Batang, 51271 Telp. 0823 1312 5885</p>
+                 <h2>${settings.school_name || 'MA NU 01 BANYUPUTIH'}</h2>
+                 <p>Alamat : ${settings.school_address || 'Jl. Lapangan 9A Banyuputih Batang, 51271 Telp. 0823 1312 5885'}</p>
               </div>
           </div>
           
@@ -173,12 +177,14 @@ const HonorPage = () => {
               <div class="ttd-box">
                  <p>Mengetahui,</p>
                  <p>Kepala Madrasah</p>
-                 <p class="nama">H. Mukhsin, S.Ag., M.Pd.I</p>
+                 <p class="nama">${settings.headmaster_name || 'H. Mukhsin, S.Ag., M.Pd.I'}</p>
+                 ${settings.headmaster_nip ? `<p>NIP. ${settings.headmaster_nip}</p>` : ''}
               </div>
               <div class="ttd-box">
                  <p>Banyuputih, ${format(new Date(), 'dd MMMM yyyy', {locale: id})}</p>
                  <p>Bendahara,</p>
-                 <p class="nama">H. Rokhim, S.Pd.I</p>
+                 <p class="nama">${settings.treasurer_name || 'H. Rokhim, S.Pd.I'}</p>
+                 ${settings.treasurer_nip ? `<p>NIP. ${settings.treasurer_nip}</p>` : ''}
               </div>
           </div>
           <script>
@@ -350,7 +356,7 @@ const HonorPage = () => {
               <div class="slip">
                  <div>
                     <div class="header">
-                       <h1>MA NU 01 BANYUPUTIH</h1>
+                       <h1>${settings.school_name || 'MA NU 01 BANYUPUTIH'}</h1>
                        <p>SLIP HONOR - ${monthName}</p>
                     </div>
                     <div class="emp-info">
