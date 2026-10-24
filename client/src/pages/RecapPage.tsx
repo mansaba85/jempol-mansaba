@@ -1,27 +1,38 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { format } from 'date-fns';
+import { id } from 'date-fns/locale';
 import toast, { Toaster } from 'react-hot-toast';
-import { 
-  BarChart2, 
-  Users, 
-  Calendar, 
-  Printer, 
-  Search, 
-  Activity, 
-  TrendingUp, 
-  Clock,
-  ShieldCheck,
-  FileText
-} from 'lucide-react';
 
 const API_URL = '/api';
 
+const SummaryCard = ({ label, val, icon, color }: any) => {
+  const colorMap: any = {
+    blue: 'bg-blue-50 text-blue-600 border-blue-100',
+    emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
+    rose: 'bg-rose-50 text-rose-600 border-rose-100',
+    slate: 'bg-slate-100 text-slate-600 border-slate-200',
+  };
+  return (
+    <div className="mansaba-card py-4 px-5">
+       <div className="flex items-center gap-4">
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg shadow-sm border ${colorMap[color]}`}>
+             <i className={`fa-solid ${icon}`}></i>
+          </div>
+          <div>
+             <p className="text-xs font-semibold text-slate-500 mb-1">{label}</p>
+             <h4 className="text-lg font-bold text-slate-800">{val}</h4>
+          </div>
+       </div>
+    </div>
+  );
+};
+
 const RecapPage = () => {
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [recapData, setRecapData] = useState<any[]>([]);
   const [search, setSearch] = useState('');
-  
+
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [settings, setSettings] = useState<any>({});
@@ -39,7 +50,7 @@ const RecapPage = () => {
       setRecapData(res.data);
     } catch (err) {
         console.error(err);
-        toast.error('Failure to retrieve monthly audit data');
+        toast.error('Gagal mengambil data rekap bulanan');
     } finally {
       setLoading(false);
     }
@@ -58,143 +69,117 @@ const RecapPage = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
-    const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
-    const periode = `${monthNames[selectedMonth-1].toUpperCase()} ${selectedYear}`;
+    const periode = format(new Date(selectedYear, selectedMonth - 1, 1), 'MMMM yyyy', { locale: id }).toUpperCase();
+    const namaSekolah = settings.school_name || 'MA NU 01 Banyuputih';
+    const alamatSekolah = settings.school_address || 'Jalan Lapangan 9A Banyuputih Batang';
+    const logoSekolah = settings.school_logo || '/logo.png';
+    const namaKepala = settings.headmaster_name || '...........................';
+    const nipKepala = settings.headmaster_nip || '...........................';
+    const namaBendahara = settings.treasurer_name || '...........................';
+    const nipBendahara = settings.treasurer_nip || '...........................';
+    const tanggalCetak = format(new Date(), 'dd MMMM yyyy', { locale: id });
 
-    // Ambil data dari settings
-    const namaKepala = settings.headmaster_name || "...........................";
-    const nipKepala = settings.headmaster_nip || "...........................";
-    const namaBendahara = settings.treasurer_name || "...........................";
-    const nipBendahara = settings.treasurer_nip || "...........................";
+    const sum = (key: string) => filteredData.reduce((acc, c) => acc + (c[key] || 0), 0);
+    const fmtDur = (mins: number) => `${Math.floor(mins / 60)}j ${mins % 60}m`;
 
     const html = `
+      <!DOCTYPE html>
       <html>
-        <head>
-          <title>Laporan_Rekap_Presensi_${periode}</title>
-          <style>
-            @import url('https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,400;0,600;0,800;1,400&display=swap');
-            body { 
-              font-family: 'Open Sans', sans-serif; 
-              padding: 40px; 
-              color: #1a1a1a;
-              line-height: 1.5;
-            }
-            .header { 
-              text-align: center; 
-              margin-bottom: 40px; 
-              border-bottom: 3px double #000; 
-              padding-bottom: 20px;
-            }
-            .header h1 { margin: 0; font-size: 20px; font-weight: 800; text-transform: uppercase; }
-            .header h2 { margin: 5px 0; font-size: 16px; font-weight: 600; }
-            .header p { margin: 0; font-size: 12px; color: #666; }
-            
-            .info-table { width: 100%; margin-bottom: 20px; font-size: 12px; font-weight: 600; }
-            
-            table.main-table { 
-              width: 100%; 
-              border-collapse: collapse; 
-              margin-top: 10px;
-              font-size: 11px;
-            }
-            table.main-table th { 
-              background: #f8fafc; 
-              border: 1px solid #000; 
-              padding: 12px 8px; 
-              text-align: center;
-              font-weight: 800;
-              text-transform: uppercase;
-            }
-            table.main-table td { 
-              border: 1px solid #000; 
-              padding: 10px 8px; 
-              text-align: center;
-            }
-            .text-left { text-align: left !important; }
-            .font-bold { font-weight: 800; }
-            .bg-gray { background: #f1f5f9; }
-            
-            .footer { 
-              margin-top: 50px; 
-              display: flex; 
-              justify-content: space-between;
-              page-break-inside: avoid;
-            }
-            .signature { text-align: center; width: 250px; }
-            .signature p { margin: 0; font-size: 12px; }
-            .signature .name { margin-top: 80px; font-weight: 800; text-decoration: underline; font-size: 13px; }
-            
-            @media print {
-              body { padding: 0; }
-              @page { margin: 1.5cm; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>Rekapitulasi Kehadiran & Kedisiplinan Pegawai</h1>
-            <h2>MAN 1 BANYUPUTIH BATANG</h2>
-            <p>Alamat: Jl. Raya Banyuputih, Kec. Banyuputih, Kab. Batang, Jawa Tengah</p>
+      <head>
+        <title>Rekap_Presensi_${periode.replace(' ', '_')}</title>
+        <style>
+          .kop-surat { display: flex; align-items: center; border-bottom: 3px solid black; padding-bottom: 10px; margin-bottom: 15px; position: relative; }
+          .kop-surat img { width: 70px; position: absolute; left: 10px; top: 0; }
+          .kop-surat .teks { text-align: center; width: 100%; }
+          .kop-surat .teks h2 { margin: 0; font-size: 16px; font-weight: bold; }
+          .kop-surat .teks p { margin: 2px 0 0 0; font-size: 10px; }
+          .judul { text-align: center; margin-bottom: 15px; }
+          .judul h1 { font-size: 12px; font-weight: bold; text-decoration: underline; margin: 0 0 3px 0; }
+          .judul h2 { font-size: 10px; font-weight: bold; margin: 0; }
+          table { width: 100%; border-collapse: collapse; }
+          th, td { border: 1px solid black; padding: 4px 6px; font-size: 10px; }
+          th { font-weight: bold; text-align: center; }
+          .text-center { text-align: center; }
+          .text-left { text-align: left; }
+          .text-right { text-align: right; }
+          .font-bold { font-weight: bold; }
+          .uppercase { text-transform: uppercase; }
+          .ttd-container { display: flex; justify-content: space-between; margin-top: 40px; padding: 0 80px; }
+          .ttd-box { text-align: center; }
+          .ttd-box p { margin: 0; font-size: 11px; }
+          .ttd-box .nama { margin-top: 70px; font-weight: bold; text-decoration: underline; }
+        </style>
+      </head>
+      <body>
+          <div class="kop-surat">
+              <img src="${logoSekolah}" onerror="this.style.display='none'" />
+              <div class="teks">
+                 <h2>${namaSekolah}</h2>
+                 <p>Alamat : ${alamatSekolah}</p>
+              </div>
           </div>
 
-          <table class="info-table">
-            <tr>
-              <td style="width: 100px">PERIODE</td>
-              <td>: ${periode}</td>
-            </tr>
-          </table>
+          <div class="judul">
+              <h1>REKAPITULASI KEHADIRAN &amp; KEDISIPLINAN PEGAWAI</h1>
+              <h2>PERIODE: ${periode}</h2>
+          </div>
 
-          <table class="main-table">
-            <thead>
-              <tr>
-                <th>PIN</th>
-                <th class="text-left">NAMA LENGKAP</th>
-                <th>JADWAL</th>
-                <th>HADIR</th>
-                <th>ALPA</th>
-                <th>TELAT</th>
-                <th>P. CEPAT</th>
-                <th>TOTAL JAM</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${filteredData.map(row => `
+          <table>
+             <thead>
                 <tr>
-                  <td>#${String(row.employeeId).padStart(4, '0')}</td>
-                  <td class="text-left font-bold">${row.employeeName}</td>
-                  <td>${row.totalWorkDays}</td>
-                  <td class="bg-gray">${row.totalDays}</td>
-                  <td class="${row.totalAbsent > 0 ? 'font-bold' : ''}">${row.totalAbsent}</td>
-                  <td>${row.totalLate}m</td>
-                  <td>${row.totalEarly}m</td>
-                  <td class="font-bold">${Math.floor(row.totalWorkDuration / 60)}j ${row.totalWorkDuration % 60}m</td>
+                  <th style="width: 30px;">NO</th>
+                  <th class="text-left">NAMA PEGAWAI</th>
+                  <th style="width: 60px;">JADWAL</th>
+                  <th style="width: 60px;">HADIR</th>
+                  <th style="width: 60px;">ALPA</th>
+                  <th style="width: 70px;">TELAT (MNT)</th>
+                  <th style="width: 70px;">P. CEPAT (MNT)</th>
+                  <th style="width: 80px;">TOTAL JAM</th>
                 </tr>
-              `).join('')}
-            </tbody>
+             </thead>
+             <tbody>
+                ${filteredData.map((row, i) => `
+                   <tr>
+                      <td class="text-center">${i + 1}</td>
+                      <td class="font-bold uppercase">${row.employeeName}</td>
+                      <td class="text-center">${row.totalWorkDays}</td>
+                      <td class="text-center">${row.totalDays}</td>
+                      <td class="text-center">${row.totalAbsent}</td>
+                      <td class="text-center">${row.totalLate}</td>
+                      <td class="text-center">${row.totalEarly}</td>
+                      <td class="text-center font-bold">${fmtDur(row.totalWorkDuration)}</td>
+                   </tr>
+                `).join('')}
+                <tr class="font-bold">
+                   <td colspan="2" class="text-center uppercase">Jumlah Total</td>
+                   <td class="text-center">${sum('totalWorkDays')}</td>
+                   <td class="text-center">${sum('totalDays')}</td>
+                   <td class="text-center">${sum('totalAbsent')}</td>
+                   <td class="text-center">${sum('totalLate')}</td>
+                   <td class="text-center">${sum('totalEarly')}</td>
+                   <td class="text-center">${fmtDur(sum('totalWorkDuration'))}</td>
+                </tr>
+             </tbody>
           </table>
 
-          <div class="footer">
-            <div class="signature">
-              <p>Mengetahui,</p>
-              <p>Kepala Madrasah</p>
-              <p class="name">${namaKepala}</p>
-              <p>NIP. ${nipKepala}</p>
-            </div>
-            <div class="signature">
-              <p>Batang, ${format(new Date(), 'dd MMMM yyyy')}</p>
-              <p>Bendahara,</p>
-              <p class="name">${namaBendahara}</p>
-              <p>NIP. ${nipBendahara}</p>
-            </div>
+          <div class="ttd-container">
+              <div class="ttd-box">
+                 <p>Mengetahui,</p>
+                 <p>Kepala Madrasah</p>
+                 <p class="nama">${namaKepala}</p>
+                 <p>NIP. ${nipKepala}</p>
+              </div>
+              <div class="ttd-box">
+                 <p>Banyuputih, ${tanggalCetak}</p>
+                 <p>Bendahara,</p>
+                 <p class="nama">${namaBendahara}</p>
+                 <p>NIP. ${nipBendahara}</p>
+              </div>
           </div>
-
           <script>
-            window.onload = () => {
-              window.print();
-              setTimeout(() => window.close(), 500);
-            };
+            window.onload = function() { window.print(); };
           </script>
-        </body>
+      </body>
       </html>
     `;
 
@@ -207,204 +192,143 @@ const RecapPage = () => {
     fetchSettings();
   }, [fetchRecap]);
 
-  const filteredData = recapData.filter(item => 
+  const filteredData = recapData.filter(item =>
     item.employeeName.toLowerCase().includes(search.toLowerCase()) ||
     item.employeeId.toString().includes(search)
   ).sort((a, b) => a.employeeName.localeCompare(b.employeeName));
 
-  return (
-    <div className="max-w-7xl mx-auto pb-20 recap-container">
-      <style>{`
-        .recap-container, .recap-container * {
-          font-family: 'Open Sans', sans-serif !important;
-        }
-      `}</style>
-      <Toaster 
-        toastOptions={{
-          style: {
-            background: '#0a0a0f',
-            color: '#fff',
-            border: '1px solid rgba(168,85,247,0.2)',
-            fontSize: '11px',
-            textTransform: '',
-            fontWeight: 'bold'
-          }
-        }} 
-      />
-      
-      {/* HEADER SECTION */}
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-10 mb-16 pb-12 border-b border-slate-200">
-        <div className="flex items-center gap-6">
-            <div className="w-10 h-10 bg-blue-50 border border-blue-200 text-blue-600 rounded-[2rem] flex items-center justify-center shadow-[0_0_20px_rgba(168,85,247,0.2)]">
-                <BarChart2 size={32} />
-            </div>
-            <div>
-                <h2 className="text-lg font-medium font-semibold font-medium text-slate-800">ANALYTIC <span className="text-blue-600 italic">AUDIT</span></h2>
-                <div className="flex items-center gap-3 mt-2">
-                  <span className="text-[10px] font-medium text-slate-500 tracking-[0.4em]">Global Recapitalization Matrix</span>
-                  <div className="h-0.5 w-12 bg-blue-50"></div>
-                </div>
-            </div>
-        </div>
-        
-        <div className="flex items-center gap-6">
-           <div className="flex bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
-              <select className="bg-transparent border-none text-[10px] font-medium text-slate-500 px-6 py-2 outline-none cursor-pointer hover:text-slate-800 transition-colors" value={selectedMonth} onChange={e=>setSelectedMonth(parseInt(e.target.value))}>
-                 {Array.from({length:12}, (_,i)=><option key={i+1} value={i+1} className="bg-white text-slate-800">{format(new Date(2022,i,1),'MMMM')}</option>)}
-              </select>
-              <div className="w-px h-6 bg-white/10 self-center"></div>
-              <select className="bg-transparent border-none text-[10px] font-medium text-slate-500 px-6 py-2 outline-none cursor-pointer hover:text-slate-800 transition-colors" value={selectedYear} onChange={e=>setSelectedYear(parseInt(e.target.value))}>
-                 {[2024,2025,2026].map(y=><option key={y} value={y} className="bg-white text-slate-800">{y}</option>)}
-              </select>
-           </div>
-           <button onClick={handlePrint} className="w-10 h-10 bg-white/[0.02] text-blue-600 border border-blue-200 rounded-[1.5rem] flex items-center justify-center shadow-sm hover:bg-primary hover:text-slate-800 transition-colors">
-              <Printer size={24} className="transition-transform" />
-           </button>
-        </div>
-      </header>
+  const statusBadge = (row: any) => {
+    if (row.totalAbsent === 0 && row.totalLate === 0) {
+      return <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100">Sempurna</span>;
+    }
+    if (row.totalAbsent > 3) {
+      return <span className="text-[11px] font-bold text-rose-600 bg-rose-50 px-3 py-1.5 rounded-lg border border-rose-100">Perlu Perhatian</span>;
+    }
+    return <span className="text-[11px] font-bold text-slate-500 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100">Stabil</span>;
+  };
 
-      {/* METRICS */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-12 mb-12">
-         <div className="mansaba-card !p-10 flex items-center gap-8 border-l-4 border-l-primary shadow-[0_15px_50px_rgba(168,85,247,0.1)]">
-            <div className="w-10 h-10 rounded-lg bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center text-lg font-medium shadow-sm">
-               <Users size={28} />
-            </div>
-            <div>
-               <p className="text-[10px] font-medium text-slate-500 tracking-[0.4em] mb-3 leading-none flex items-center gap-2">
-                 <Activity size={12} className="text-blue-600" /> PERSONNEL_COUNT
-               </p>
-               <h4 className="text-lg font-medium font-semibold font-medium text-slate-800 leading-none">{recapData.length} <span className="text-xs font-medium text-slate-500 ml-2">NODES</span></h4>
-            </div>
-         </div>
-         <div className="mansaba-card !p-10 flex items-center gap-8 border-l-4 border-l-emerald-500 shadow-[0_15px_50px_rgba(16,185,129,0.1)]">
-            <div className="w-10 h-10 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center text-lg font-medium shadow-sm">
-               <Calendar size={28} />
-            </div>
-            <div>
-               <p className="text-[10px] font-medium text-slate-500 tracking-[0.4em] mb-3 leading-none">ACCUMULATED_SESSIONS</p>
-               <h4 className="text-lg font-medium font-semibold font-medium text-slate-800 leading-none">
-                  {recapData.reduce((acc, curr) => acc + curr.totalDays, 0).toLocaleString()} <span className="text-xs font-medium text-slate-500 ml-2">EVENTS</span>
-               </h4>
-            </div>
-         </div>
+  return (
+    <div className="space-y-6 pb-20">
+      <Toaster />
+
+      {/* HEADER SECTION */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+           <h2 className="text-2xl font-semibold text-slate-800">Rekap Presensi</h2>
+           <p className="text-sm text-slate-500 mt-1">Rekapitulasi kehadiran &amp; kedisiplinan pegawai per bulan.</p>
+        </div>
       </div>
 
-      {/* RECAP TABLE PORTAL */}
-      <div className="mansaba-card !p-0 overflow-hidden flex flex-col min-h-[500px]">
-         <div className="px-10 py-8 border-b border-slate-200 flex flex-col md:flex-row items-center justify-between gap-6 bg-white/[0.01]">
-            <div className="relative w-full max-w-md">
-               <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500 -focus-within:text-blue-600 transition-colors" size={18} />
-               <input className="mansaba-input !pl-16 !bg-white !py-4" placeholder="FILTER_PERSONNEL_NAME..." value={search} onChange={e=>setSearch(e.target.value)} />
-            </div>
-            <div className="flex items-center gap-4 px-8 py-3.5 bg-white rounded-lg border border-slate-200">
-               <TrendingUp size={14} className="text-blue-600" />
-               <span className="text-[10px] font-medium text-slate-500 tracking-[0.3em]">{loading ? 'SYNCING_LOG_STREAM...' : filteredData.length + '_RECORDS_DETECTED'}</span>
-            </div>
-         </div>
+      <div className="space-y-6">
+          {/* METRICS */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <SummaryCard label="Jumlah Pegawai" val={filteredData.length} icon="fa-users" color="blue" />
+            <SummaryCard label="Total Hadir" val={filteredData.reduce((acc, c) => acc + (c.totalDays || 0), 0)} icon="fa-calendar-check" color="emerald" />
+            <SummaryCard label="Total Alpa" val={filteredData.reduce((acc, c) => acc + (c.totalAbsent || 0), 0)} icon="fa-user-slash" color="rose" />
+            <SummaryCard label="Total Telat (Menit)" val={filteredData.reduce((acc, c) => acc + (c.totalLate || 0), 0)} icon="fa-clock" color="slate" />
+          </div>
 
-         <div className="overflow-x-auto no-scrollbar">
-            <table className="mansaba-table">
-               <thead>
-                  <tr>
-                     <th className="mansaba-th text-center w-32 border-slate-200">UNIT_ID</th>
-                     <th className="mansaba-th px-10 border-slate-200">PERSONNEL_CORE</th>
-                     <th className="mansaba-th text-center border-slate-200">JADWAL/HADIR</th>
-                     <th className="mansaba-th text-center border-slate-200 text-rose-400">ALPA</th>
-                     <th className="mansaba-th text-center border-slate-200 text-rose-500">TELAT (MIN)</th>
-                     <th className="mansaba-th text-center border-slate-200 text-amber-500">P. CEPAT (MIN)</th>
-                     <th className="mansaba-th text-center border-slate-200 text-emerald-600">TOTAL JAM</th>
-                     <th className="mansaba-th text-right px-12 border-slate-200">STATUS</th>
-                  </tr>
-               </thead>
-               <tbody className="divide-y divide-white/[0.02]">
-                  {loading ? (
-                    <tr>
-                      <td colSpan={6} className="py-40 text-center text-[10px] font-medium text-slate-500 tracking-[1em]">STREAMING DATA...</td>
-                    </tr>
-                  ) : filteredData.length > 0 ? filteredData.map((row) => (
+          {/* FILTER CONTROL */}
+          <div className="mansaba-card flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="relative w-full md:w-80">
+                <i className="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                <input className="mansaba-input pl-10" placeholder="Cari nama pegawai..." value={search} onChange={e=>setSearch(e.target.value)} />
+            </div>
+
+            <div className="flex items-center gap-4 w-full md:w-auto">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-slate-500 font-medium">Bulan:</span>
+                  <select className="mansaba-input !py-1.5 w-auto" value={selectedMonth} onChange={e=>setSelectedMonth(parseInt(e.target.value))}>
+                      {Array.from({length:12}, (_,i)=><option key={i+1} value={i+1}>{format(new Date(2022,i,1),'MMMM', {locale: id})}</option>)}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-slate-500 font-medium">Tahun:</span>
+                  <select className="mansaba-input !py-1.5 w-auto" value={selectedYear} onChange={e=>setSelectedYear(parseInt(e.target.value))}>
+                      {[2024,2025,2026,2027].map(y=><option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+                <button onClick={handlePrint} className="w-10 h-10 rounded-lg border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-200 flex items-center justify-center transition-all bg-white" title="Cetak Rekap">
+                  <i className="fa-solid fa-print"></i>
+                </button>
+            </div>
+          </div>
+
+          {/* MAIN DATA TABLE */}
+          <div className="mansaba-card-no-pad">
+                <div className="md:hidden flex items-center gap-1.5 px-4 py-2 border-b border-slate-100 text-rose-600 animate-pulse bg-rose-50/30">
+                  <i className="fa-solid fa-angles-right text-[10px]"></i>
+                  <span className="text-[10px] font-bold uppercase tracking-widest">Geser ke samping untuk detail rekap</span>
+                </div>
+                <div className="overflow-x-auto">
+                <table className="mansaba-table">
+                  <thead>
+                      <tr>
+                        <th className="mansaba-th text-center w-12">No.</th>
+                        <th className="mansaba-th text-center w-24">No. ID</th>
+                        <th className="mansaba-th">Nama Pegawai</th>
+                        <th className="mansaba-th text-center">Jadwal / Hadir</th>
+                        <th className="mansaba-th text-center">Alpa</th>
+                        <th className="mansaba-th text-center">Telat (Mnt)</th>
+                        <th className="mansaba-th text-center">P. Cepat (Mnt)</th>
+                        <th className="mansaba-th text-center">Total Jam</th>
+                        <th className="mansaba-th text-center">Status</th>
+                      </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {loading ? (
+                      <tr>
+                        <td colSpan={9} className="py-20 text-center text-sm text-slate-500">Memuat data...</td>
+                      </tr>
+                    ) : filteredData.length > 0 ? filteredData.map((row, i) => (
                       <tr key={row.employeeId} className="tr-hover">
+                        <td className="mansaba-td text-center">{i + 1}</td>
                         <td className="mansaba-td text-center">
-                           <span className="font-medium text-blue-600 text-xs transition-colors">#{String(row.employeeId).padStart(5, '0')}</span>
+                           <span className="font-medium text-blue-600 text-xs">#{String(row.employeeId).padStart(5, '0')}</span>
                         </td>
-                        <td className="mansaba-td px-10 py-6">
+                        <td className="mansaba-td">
                            <div className="flex flex-col">
-                              <span className="text-sm font-medium text-slate-800 mb-1.5">{row.employeeName}</span>
-                              <div className="flex items-center gap-2">
-                                <div className="w-1.5 h-1.5 rounded-full bg-blue-50 transition-colors"></div>
-                                <span className="text-[9px] font-medium text-slate-500 tracking-[0.2em]">{row.role || 'STANDARD_OPERATIVE'}</span>
-                              </div>
+                              <span className="text-sm font-medium text-slate-800">{row.employeeName}</span>
+                              <span className="text-xs text-slate-500">{row.role || 'GURU'}</span>
                            </div>
                         </td>
                         <td className="mansaba-td text-center">
-                           <div className="flex flex-col items-center">
-                              <span className="text-xs font-bold text-slate-800">{row.totalWorkDays} / {row.totalDays}</span>
-                              <span className="text-[8px] text-slate-400 uppercase font-black tracking-tighter">Hari Kerja</span>
-                           </div>
+                           <span className="text-sm font-bold text-slate-800">{row.totalWorkDays} / {row.totalDays}</span>
                         </td>
                         <td className="mansaba-td text-center">
-                           <span className={`text-xs font-black ${row.totalAbsent > 0 ? 'text-rose-600' : 'text-slate-300'}`}>
+                           <span className={`text-sm font-bold ${row.totalAbsent > 0 ? 'text-rose-600' : 'text-slate-300'}`}>
                               {row.totalAbsent}
                            </span>
                         </td>
                         <td className="mansaba-td text-center">
-                           <span className={`text-xs font-bold ${row.totalLate > 0 ? 'text-rose-500' : 'text-slate-400'}`}>
+                           <span className={`text-sm font-bold ${row.totalLate > 0 ? 'text-rose-500' : 'text-slate-400'}`}>
                               {row.totalLate}
                            </span>
                         </td>
                         <td className="mansaba-td text-center">
-                           <span className={`text-xs font-bold ${row.totalEarly > 0 ? 'text-amber-500' : 'text-slate-400'}`}>
+                           <span className={`text-sm font-bold ${row.totalEarly > 0 ? 'text-amber-500' : 'text-slate-400'}`}>
                               {row.totalEarly}
                            </span>
                         </td>
                         <td className="mansaba-td text-center">
-                           <div className="flex flex-col items-center">
-                              <span className="text-xs font-black text-emerald-600">
-                                 {Math.floor(row.totalWorkDuration / 60)}j {row.totalWorkDuration % 60}m
-                              </span>
-                              <span className="text-[8px] text-emerald-400 uppercase font-black tracking-tighter">Efektif</span>
-                           </div>
+                           <span className="text-sm font-bold text-emerald-600">
+                              {Math.floor(row.totalWorkDuration / 60)}j {row.totalWorkDuration % 60}m
+                           </span>
                         </td>
-                        <td className="mansaba-td text-right px-12">
-                           <div className="flex items-center justify-end gap-3">
-                            {row.totalAbsent === 0 && row.totalLate === 0 ? (
-                                <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-4 py-2 rounded-lg border border-emerald-100">
-                                  <ShieldCheck size={12} />
-                                  <span className="text-[9px] font-black uppercase tracking-widest">EXCELLENT</span>
-                                </div>
-                            ) : row.totalAbsent > 3 ? (
-                                <div className="flex items-center gap-2 text-rose-600 bg-rose-50 px-4 py-2 rounded-lg border border-rose-100">
-                                  <Activity size={12} />
-                                  <span className="text-[9px] font-black uppercase tracking-widest">CRITICAL</span>
-                                </div>
-                            ) : (
-                                <div className="flex items-center gap-2 text-slate-500 bg-slate-50 px-4 py-2 rounded-lg border border-slate-100">
-                                  <Clock size={12} />
-                                  <span className="text-[9px] font-black uppercase tracking-widest">STABLE</span>
-                                </div>
-                            )}
-                           </div>
+                        <td className="mansaba-td text-center">
+                           {statusBadge(row)}
                         </td>
                       </tr>
-                  )) : (
+                    )) : (
                       <tr>
-                        <td colSpan={8} className="py-48 text-center text-slate-500">
-                           <div className="flex flex-col items-center gap-8 opacity-5">
-                              <FileText size={80} />
-                              <p className="text-[12px] font-medium tracking-[0.6em]">NO_RECORDS_INDEXED</p>
-                           </div>
-                        </td>
+                        <td colSpan={9} className="py-20 text-center text-sm text-slate-500">Tidak ada data rekap untuk periode ini.</td>
                       </tr>
-                  )}
-               </tbody>
-            </table>
-         </div>
+                    )}
+                  </tbody>
+                </table>
+                </div>
+          </div>
       </div>
-
-      <style>{`
-        @media print {
-          display: none !important;
-        }
-      `}</style>
     </div>
   );
 };
