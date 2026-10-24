@@ -88,14 +88,14 @@ const RecapPage = () => {
       <head>
         <title>Rekap_Presensi_${periode.replace(' ', '_')}</title>
         <style>
-          .kop-surat { display: flex; align-items: center; border-bottom: 3px solid black; padding-bottom: 10px; margin-bottom: 15px; position: relative; }
-          .kop-surat img { width: 70px; position: absolute; left: 10px; top: 0; }
-          .kop-surat .teks { text-align: center; width: 100%; }
-          .kop-surat .teks h2 { margin: 0; font-size: 16px; font-weight: bold; }
-          .kop-surat .teks p { margin: 2px 0 0 0; font-size: 10px; }
-          .judul { text-align: center; margin-bottom: 15px; }
-          .judul h1 { font-size: 12px; font-weight: bold; text-decoration: underline; margin: 0 0 3px 0; }
-          .judul h2 { font-size: 10px; font-weight: bold; margin: 0; }
+          .kop-surat { display: flex; align-items: center; gap: 12px; border-bottom: 3px solid black; padding-bottom: 10px; margin-bottom: 15px; }
+          .kop-surat img { width: 64px; height: 64px; object-fit: contain; flex-shrink: 0; }
+          .kop-surat .identitas { flex: 1; }
+          .kop-surat .identitas h2 { margin: 0; font-size: 16px; font-weight: bold; text-transform: uppercase; }
+          .kop-surat .identitas p { margin: 2px 0 0 0; font-size: 10px; }
+          .kop-surat .dokumen { text-align: right; flex-shrink: 0; max-width: 45%; }
+          .kop-surat .dokumen h3 { margin: 0; font-size: 13px; font-weight: bold; }
+          .kop-surat .dokumen p { margin: 2px 0 0 0; font-size: 10px; }
           table { width: 100%; border-collapse: collapse; }
           th, td { border: 1px solid black; padding: 4px 6px; font-size: 10px; }
           th { font-weight: bold; text-align: center; }
@@ -113,15 +113,14 @@ const RecapPage = () => {
       <body>
           <div class="kop-surat">
               <img src="${logoSekolah}" onerror="this.style.display='none'" />
-              <div class="teks">
+              <div class="identitas">
                  <h2>${namaSekolah}</h2>
                  <p>Alamat : ${alamatSekolah}</p>
               </div>
-          </div>
-
-          <div class="judul">
-              <h1>REKAPITULASI KEHADIRAN &amp; KEDISIPLINAN PEGAWAI</h1>
-              <h2>PERIODE: ${periode}</h2>
+              <div class="dokumen">
+                 <h3>REKAPITULASI KEHADIRAN &amp; KEDISIPLINAN PEGAWAI</h3>
+                 <p>Periode: ${periode}</p>
+              </div>
           </div>
 
           <table>
