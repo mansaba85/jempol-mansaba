@@ -830,6 +830,40 @@ app.post('/api/employees/bulk-pattern', async (req, res) => {
   res.json({ success: true });
 });
 
+// Koreksi pola satu periode riwayat — jalur eksplisit, BUKAN penugasan baru.
+// Hanya menukar patternId pada baris periode yang sudah ada; tanggal mulai/akhir TIDAK
+// diubah, sehingga tidak menggeser, memotong, atau menumpuk periode lain. Guard
+// assignEmployeePattern tetap berlaku penuh untuk penugasan biasa (POST /employees &
+// bulk-pattern); endpoint ini khusus untuk koreksi riwayat yang disadari dampaknya
+// (rekap & honor bulan terkait akan berubah saat dihitung ulang).
+app.put('/api/employees/:id/patterns/:periodId', async (req, res) => {
+  const employeeId = parseInt(req.params.id);
+  const periodId = parseInt(req.params.periodId);
+  const patternId = parseInt(req.body.patternId);
+  if (!employeeId || !periodId || !patternId) {
+    return res.status(400).json({ error: 'ID pegawai, ID periode, dan pola baru wajib diisi' });
+  }
+  try {
+    const period = await prisma.employeepattern.findUnique({ where: { id: periodId } });
+    if (!period || period.employeeId !== employeeId) {
+      return res.status(404).json({ error: 'Periode shift tidak ditemukan untuk pegawai ini' });
+    }
+    const pattern = await prisma.shiftpattern.findUnique({ where: { id: patternId } });
+    if (!pattern) return res.status(404).json({ error: 'Pola shift tidak ditemukan' });
+    if (period.patternId === patternId) {
+      return res.json({ success: true, unchanged: true, period });
+    }
+    const updated = await prisma.employeepattern.update({
+      where: { id: periodId },
+      data: { patternId }
+    });
+    res.json({ success: true, period: updated });
+  } catch (error) {
+    console.error('[Correct Period Error]', error);
+    res.status(500).json({ error: 'Gagal mengoreksi periode shift' });
+  }
+});
+
 app.delete('/api/employees/:id', async (req, res) => {
   const id = parseInt(req.params.id);
   try {
