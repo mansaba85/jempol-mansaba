@@ -3,6 +3,7 @@ import axios from 'axios';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import toast, { Toaster } from 'react-hot-toast';
+import { compareEmployeeOrder } from '../utils/employeeOrder';
 
 const API_URL = '/api';
 
@@ -194,7 +195,7 @@ const RecapPage = () => {
   const filteredData = recapData.filter(item =>
     item.employeeName.toLowerCase().includes(search.toLowerCase()) ||
     item.employeeId.toString().includes(search)
-  ).sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+  ).sort(compareEmployeeOrder);
 
   const statusBadge = (row: any) => {
     if (row.totalAbsent === 0 && row.totalLate === 0) {
