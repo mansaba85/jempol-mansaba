@@ -229,7 +229,7 @@ const DashboardPage = () => {
               <i className="fa-solid fa-quote-right text-3xl opacity-20"></i>
             </div>
             <div className="mt-8 flex items-center justify-between border-t border-white/10 pt-4">
-              <span className="text-[10px] font-black uppercase tracking-widest text-blue-200">System v4.0.5</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-blue-200">System v4.0.6</span>
               <div className="flex items-center gap-1">
                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></div>
                 <span className="text-[10px] font-bold">Online</span>
