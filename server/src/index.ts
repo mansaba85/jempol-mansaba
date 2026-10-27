@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import { createFixedWindowLimiter, createKeyedLimiter, type LimitCheck } from './rateLimit.js';
 import ZKLib from 'node-zklib';
 import { PrismaClient } from '@prisma/client';
 import { format, endOfMonth, parse } from 'date-fns';
@@ -348,9 +349,31 @@ admsRoutes.forEach(route => {
   app.post(route, handleAdmsPush);
 });
 
+// PR-C: rate limit percobaan login (fixed window 15 menit).
+// SENGAJA tanpa kunci IP — pegawai bisa login dari mana saja, termasuk jaringan
+// seluler (IP berubah & berbagi CGNAT), jadi limit per-IP akan salah sasaran.
+// - Login pegawai (PIN-only): limit GLOBAL 20 gagal / 15 menit untuk seluruh
+//   endpoint, karena tanpa identitas akun tidak ada kunci per-akun sebelum login.
+// - Login admin: limit 5 gagal / 15 menit per username (username dikirim sebelum login).
+// Hanya kegagalan (401) yang dihitung; login berhasil tidak memakan jatah.
+// Counter hidup di memori proses — reset saat container restart (jendela cuma 15 menit).
+const employeeLoginLimiter = createFixedWindowLimiter(20, 15 * 60 * 1000);
+const adminLoginLimiter = createKeyedLimiter(5, 15 * 60 * 1000);
+
+function loginRateLimited(res: any, check: LimitCheck) {
+  res.setHeader('Retry-After', String(check.retryAfterSeconds));
+  return res.status(429).json({
+    success: false,
+    message: `Terlalu banyak percobaan login. Coba lagi dalam ${check.retryAfterMinutes} menit.`,
+  });
+}
+
 // --- AUTH & LOGIN ---
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
+  const adminKey = String(username ?? '');
+  const adminLimit = adminLoginLimiter.check(adminKey);
+  if (adminLimit.limited) return loginRateLimited(res, adminLimit);
   const user = await prisma.user.findFirst({
     where: { username, password }
   });
@@ -366,6 +389,7 @@ app.post('/api/login', async (req, res) => {
       user: { username: user.username, role: user.role } 
     });
   } else {
+    adminLoginLimiter.recordFailure(adminKey);
     res.status(401).json({ 
       success: false, 
       message: 'Username atau Password salah' 
@@ -375,6 +399,8 @@ app.post('/api/login', async (req, res) => {
 
 app.post('/api/login/employee', async (req, res) => {
   const { id, pin } = req.body;
+  const employeeLimit = employeeLoginLimiter.check();
+  if (employeeLimit.limited) return loginRateLimited(res, employeeLimit);
   
   let employee;
   if (id) {
@@ -400,6 +426,7 @@ app.post('/api/login/employee', async (req, res) => {
       user: { id: employee.id, username: employee.name, role: 'EMPLOYEE' } 
     });
   } else {
+    employeeLoginLimiter.recordFailure();
     res.status(401).json({ 
       success: false, 
       message: 'NIP atau PIN salah' 
