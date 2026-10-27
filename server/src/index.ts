@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import ZKLib from 'node-zklib';
 import { PrismaClient } from '@prisma/client';
 import { format, endOfMonth, parse } from 'date-fns';
@@ -22,7 +23,11 @@ if (!JWT_SECRET) {
 }
 
 const app = express();
-app.use(cors());
+app.disable('x-powered-by');
+app.use(helmet({ frameguard: { action: 'deny' } }));
+app.use(cors({
+  origin: ['https://jariku.manubanyuputih.id', 'http://localhost:5173', 'http://127.0.0.1:5173'],
+}));
 app.use(express.json({ limit: '50mb' }));
 app.use((req, res, next) => {
   const ct = req.headers['content-type'] || '';
@@ -353,7 +358,7 @@ app.post('/api/login', async (req, res) => {
     const token = jwt.sign(
       { id: user.id, username: user.username, role: user.role },
       JWT_SECRET,
-      { expiresIn: '4h' }
+      { expiresIn: '4h', algorithm: 'HS256' }
     );
     res.json({ 
       success: true, 
@@ -387,7 +392,7 @@ app.post('/api/login/employee', async (req, res) => {
     const token = jwt.sign(
       { id: employee.id, username: employee.name, role: 'EMPLOYEE' },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: '7d', algorithm: 'HS256' }
     );
     res.json({ 
       success: true, 
@@ -419,7 +424,7 @@ const authenticateToken = (req: any, res: any, next: any) => {
 
   if (!token) return res.status(401).json({ message: 'Akses ditolak. Silakan login.' });
 
-  jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
+  jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }, (err: any, user: any) => {
     if (err) return res.status(403).json({ message: 'Sesi berakhir. Silakan login kembali.' });
     req.user = user;
     next();
