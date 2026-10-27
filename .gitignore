@@ -10,3 +10,14 @@ client/dist
 server/dist
 server/scratch/
 *.log
+
+# PR-A: cegah data & secret bocor ke repo publik
+server/uploads/
+BACKUP_*.json
+BACKUP_*.sql
+*.pem
+*.key
+.env.*
+!.env.example
+*.sql
+!server/prisma/migrations/**/migration.sql
